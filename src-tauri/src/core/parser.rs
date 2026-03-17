@@ -3,6 +3,7 @@ use std::io::Write;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use sha2::{Digest, Sha256};
 use serde::Serialize;
 use serde_json::Value;
 use sqlx::SqlitePool;
@@ -86,6 +87,7 @@ impl From<sqlx::Error> for ParserError {
 struct ParsedMemoryItem {
     date: String,
     location: Option<String>,
+    media_type: String,
     media_url: String,
     overlay_url: Option<String>,
 }
@@ -194,6 +196,7 @@ pub async fn import_memories_history_json(
     let mut transaction = pool.begin().await?;
     let mut imported_count = 0usize;
     let mut skipped_duplicates = 0usize;
+    let mut next_chunk_order_by_hash = std::collections::HashMap::<String, i64>::new();
 
     for item in &parsed_items {
         let exists = sqlx::query_scalar::<_, i64>(
@@ -223,6 +226,74 @@ pub async fn import_memories_history_json(
         .await?;
 
         imported_count += 1;
+
+        let memory_hash = build_memory_hash(&item.date, &item.media_type);
+
+        sqlx::query(
+            "
+            INSERT OR IGNORE INTO Memories (hash, date, status)
+            VALUES (?1, ?2, ?3)
+            ",
+        )
+        .bind(&memory_hash)
+        .bind(&item.date)
+        .bind("queued")
+        .execute(&mut *transaction)
+        .await?;
+
+        let memory_id = sqlx::query_scalar::<_, i64>("SELECT id FROM Memories WHERE hash = ?1")
+            .bind(&memory_hash)
+            .fetch_one(&mut *transaction)
+            .await?;
+
+        let chunk_exists = sqlx::query_scalar::<_, i64>(
+            "
+            SELECT EXISTS(
+                SELECT 1 FROM MediaChunks
+                WHERE memory_id = ?1
+                  AND url = ?2
+                  AND IFNULL(overlay_url, '') = IFNULL(?3, '')
+            )
+            ",
+        )
+        .bind(memory_id)
+        .bind(&item.media_url)
+        .bind(&item.overlay_url)
+        .fetch_one(&mut *transaction)
+        .await?;
+
+        if chunk_exists == 0 {
+            let order_index = if let Some(next_order_index) = next_chunk_order_by_hash.get_mut(&memory_hash) {
+                let current_order_index = *next_order_index;
+                *next_order_index += 1;
+                current_order_index
+            } else {
+                let next_order_index = sqlx::query_scalar::<_, Option<i64>>(
+                    "SELECT COALESCE(MAX(order_index), 0) FROM MediaChunks WHERE memory_id = ?1",
+                )
+                .bind(memory_id)
+                .fetch_one(&mut *transaction)
+                .await?
+                .unwrap_or(0)
+                    + 1;
+
+                next_chunk_order_by_hash.insert(memory_hash.clone(), next_order_index + 1);
+                next_order_index
+            };
+
+            sqlx::query(
+                "
+                INSERT INTO MediaChunks (memory_id, url, overlay_url, order_index)
+                VALUES (?1, ?2, ?3, ?4)
+                ",
+            )
+            .bind(memory_id)
+            .bind(&item.media_url)
+            .bind(&item.overlay_url)
+            .bind(order_index)
+            .execute(&mut *transaction)
+            .await?;
+        }
     }
 
     transaction.commit().await?;
@@ -375,13 +446,39 @@ fn parse_memory_item(value: &Value) -> Option<ParsedMemoryItem> {
     .unwrap_or_else(|| "unknown".to_string());
 
     let location = parse_location(value);
+    let media_type = infer_media_type(&media_url).to_string();
 
     Some(ParsedMemoryItem {
         date,
         location,
+        media_type,
         media_url,
         overlay_url,
     })
+}
+
+fn infer_media_type(media_url: &str) -> &'static str {
+    let extension = media_url
+        .rsplit_once('.')
+        .map(|(_, extension)| extension)
+        .and_then(|extension| extension.split(['?', '#']).next())
+        .map(|extension| extension.to_ascii_lowercase());
+
+    match extension.as_deref() {
+        Some("mp4") | Some("mov") | Some("m4v") | Some("avi") | Some("webm") => "video",
+        Some("jpg") | Some("jpeg") | Some("png") | Some("gif") | Some("webp") | Some("heic") => {
+            "image"
+        }
+        _ => "unknown",
+    }
+}
+
+fn build_memory_hash(date: &str, media_type: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(date.as_bytes());
+    hasher.update(b"|");
+    hasher.update(media_type.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 fn first_non_empty_string(value: &Value, keys: &[&str]) -> Option<String> {
@@ -489,21 +586,7 @@ mod tests {
             .await
             .expect("sqlite pool should be created for parser tests");
 
-        sqlx::query(
-            "
-            CREATE TABLE IF NOT EXISTS MemoryItem (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT NOT NULL,
-                location TEXT,
-                media_url TEXT NOT NULL,
-                overlay_url TEXT,
-                status TEXT NOT NULL
-            )
-            ",
-        )
-        .execute(&pool)
-        .await
-        .expect("memory table should be created for parser tests");
+        create_import_tables(&pool).await;
 
         pool.close().await;
 
@@ -560,21 +643,7 @@ mod tests {
             .await
             .expect("sqlite pool should be created for parser tests");
 
-        sqlx::query(
-            "
-            CREATE TABLE IF NOT EXISTS MemoryItem (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT NOT NULL,
-                location TEXT,
-                media_url TEXT NOT NULL,
-                overlay_url TEXT,
-                status TEXT NOT NULL
-            )
-            ",
-        )
-        .execute(&pool)
-        .await
-        .expect("memory table should be created for parser tests");
+        create_import_tables(&pool).await;
 
         pool.close().await;
 
@@ -612,21 +681,7 @@ mod tests {
             .await
             .expect("sqlite pool should be created for parser tests");
 
-        sqlx::query(
-            "
-            CREATE TABLE IF NOT EXISTS MemoryItem (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT NOT NULL,
-                location TEXT,
-                media_url TEXT NOT NULL,
-                overlay_url TEXT,
-                status TEXT NOT NULL
-            )
-            ",
-        )
-        .execute(&pool)
-        .await
-        .expect("memory table should be created for parser tests");
+        create_import_tables(&pool).await;
 
         pool.close().await;
 
@@ -645,5 +700,125 @@ mod tests {
         .await;
 
         assert!(matches!(result, Err(ParserError::InvalidSchema(_))));
+    }
+
+    #[tokio::test]
+    async fn deduplicates_memories_and_keeps_multipart_chunks() {
+        let temp_dir = tempfile::tempdir().expect("temp dir should be created for parser tests");
+        let db_path = temp_dir.path().join("memories.db");
+        let db_url = format!("sqlite://{}?mode=rwc", db_path.to_string_lossy());
+
+        let pool = sqlx::SqlitePool::connect(&db_url)
+            .await
+            .expect("sqlite pool should be created for parser tests");
+        create_import_tables(&pool).await;
+        pool.close().await;
+
+        let json_input = serde_json::json!({
+            "Saved Media": [
+                {
+                    "mediaUrl": "https://example.com/video-part-1.mp4",
+                    "createdAt": "2024-03-01T00:00:00Z"
+                },
+                {
+                    "mediaUrl": "https://example.com/video-part-2.mp4",
+                    "createdAt": "2024-03-01T00:00:00Z"
+                },
+                {
+                    "mediaUrl": "https://example.com/photo-1.jpg",
+                    "createdAt": "2024-03-01T00:00:00Z"
+                }
+            ]
+        })
+        .to_string();
+
+        let first_summary = import_memories_history_json(&db_url, &json_input)
+            .await
+            .expect("first import should succeed");
+        let second_summary = import_memories_history_json(&db_url, &json_input)
+            .await
+            .expect("second import should succeed");
+
+        assert_eq!(first_summary.imported_count, 3);
+        assert_eq!(second_summary.imported_count, 0);
+
+        let verification_pool = sqlx::SqlitePool::connect(&db_url)
+            .await
+            .expect("sqlite pool should be opened for verification");
+
+        let memories_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM Memories")
+            .fetch_one(&verification_pool)
+            .await
+            .expect("memories count query should execute");
+        assert_eq!(memories_count, 2);
+
+        let chunk_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM MediaChunks")
+            .fetch_one(&verification_pool)
+            .await
+            .expect("media chunks count query should execute");
+        assert_eq!(chunk_count, 3);
+
+        let video_chunks = sqlx::query_scalar::<_, i64>(
+            "
+            SELECT COUNT(*)
+            FROM MediaChunks mc
+            INNER JOIN Memories m ON m.id = mc.memory_id
+            WHERE mc.url LIKE '%video-part-%'
+            ",
+        )
+        .fetch_one(&verification_pool)
+        .await
+        .expect("video chunk count query should execute");
+        assert_eq!(video_chunks, 2);
+
+        verification_pool.close().await;
+    }
+
+    async fn create_import_tables(pool: &sqlx::SqlitePool) {
+        sqlx::query(
+            "
+            CREATE TABLE IF NOT EXISTS MemoryItem (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                location TEXT,
+                media_url TEXT NOT NULL,
+                overlay_url TEXT,
+                status TEXT NOT NULL
+            )
+            ",
+        )
+        .execute(pool)
+        .await
+        .expect("memory table should be created for parser tests");
+
+        sqlx::query(
+            "
+            CREATE TABLE IF NOT EXISTS Memories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                hash TEXT NOT NULL UNIQUE,
+                date TEXT NOT NULL,
+                status TEXT NOT NULL
+            )
+            ",
+        )
+        .execute(pool)
+        .await
+        .expect("memories table should be created for parser tests");
+
+        sqlx::query(
+            "
+            CREATE TABLE IF NOT EXISTS MediaChunks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                memory_id INTEGER NOT NULL,
+                url TEXT NOT NULL,
+                overlay_url TEXT,
+                order_index INTEGER NOT NULL,
+                FOREIGN KEY (memory_id) REFERENCES Memories(id)
+            )
+            ",
+        )
+        .execute(pool)
+        .await
+        .expect("media chunks table should be created for parser tests");
     }
 }

@@ -41,9 +41,9 @@
 - [ ] **Verification:** Call `invoke('validate_memory_file', { path: "test.zip" })` from the React console and verify it successfully extracts and parses a valid mock file.
 
 ### Phase 3: SQLite Deduplication & Multi-Part Video Handling
-- [ ] **Step 3.1:** In `src-tauri/src/db/schema.rs`, initialize `tauri-plugin-sql` and create a `Memories` table (id, hash, date, status). The `hash` is generated via `sha2` using Date + Media Type to ensure deduplication across 6-month updates.
-- [ ] **Step 3.2:** In the same file, create a `MediaChunks` table (id, memory_id, url, overlay_url, order_index) with a foreign key to `Memories`. This allows multiple 10-second video split URLs to belong to one single Memory.
-- [ ] **Step 3.3:** In `src-tauri/src/core/parser.rs`, write the logic to iterate through the parsed JSON, generate hashes, and execute `INSERT OR IGNORE` into `Memories`, followed by inserting into `MediaChunks`.
+- [x] **Step 3.1:** In `src-tauri/src/db/schema.rs`, initialize `tauri-plugin-sql` and create a `Memories` table (id, hash, date, status). The `hash` is generated via `sha2` using Date + Media Type to ensure deduplication across 6-month updates.
+- [x] **Step 3.2:** In the same file, create a `MediaChunks` table (id, memory_id, url, overlay_url, order_index) with a foreign key to `Memories`. This allows multiple 10-second video split URLs to belong to one single Memory.
+- [x] **Step 3.3:** In `src-tauri/src/core/parser.rs`, write the logic to iterate through the parsed JSON, generate hashes, and execute `INSERT OR IGNORE` into `Memories`, followed by inserting into `MediaChunks`.
 - [ ] **Verification:** Parse a JSON file twice. Query the SQLite DB and verify that `Memories` count remains the same (no duplicates) and multi-part videos have corresponding rows in `MediaChunks`.
 
 ### Phase 4: The Two-Button Workflow (Download & Process)
