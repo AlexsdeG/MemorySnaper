@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSPhotoLibraryUsageDescription</key>
+  <string>MemorySnaper needs access to your photo library to import and process exported memories.</string>
+  <key>NSPhotoLibraryAddUsageDescription</key>
+  <string>MemorySnaper needs permission to save processed memories back to your photo library.</string>
+</dict>
+</plist>

@@ -35,9 +35,9 @@
 - [x] **Verification:** Run `npm run tauri dev`. Verify the app launches, the tab navigation works, and the UI adapts to mobile dimensions without errors.
 
 ### Phase 2: Rust Backend - ZIP Extraction & Validation
-- [ ] **Step 2.1:** In `src-tauri/src/core/parser.rs`, create a function using the `zip` crate to extract `memories_history.json` into a temporary system directory if the input is a `.zip`. If the input is `.json`, read it directly.
-- [ ] **Step 2.2:** In the same file, use `serde_json` to validate the JSON schema matches the expected Snapchat export format.
-- [ ] **Step 2.3:** In `src-tauri/src/commands/file.rs`, expose `#[tauri::command] validate_memory_file(path: String)` returning a boolean or error string to React.
+- [x] **Step 2.1:** In `src-tauri/src/core/parser.rs`, create a function using the `zip` crate to extract `memories_history.json` into a temporary system directory if the input is a `.zip`. If the input is `.json`, read it directly.
+- [x] **Step 2.2:** In the same file, use `serde_json` to validate the JSON schema matches the expected Snapchat export format.
+- [x] **Step 2.3:** In `src-tauri/src/commands/file.rs`, expose `#[tauri::command] validate_memory_file(path: String)` returning a boolean or error string to React.
 - [ ] **Verification:** Call `invoke('validate_memory_file', { path: "test.zip" })` from the React console and verify it successfully extracts and parses a valid mock file.
 
 ### Phase 3: SQLite Deduplication & Multi-Part Video Handling
