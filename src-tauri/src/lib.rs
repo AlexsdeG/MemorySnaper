@@ -3,9 +3,10 @@ mod db;
 
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 const MAX_PERSISTED_RETRY_ATTEMPTS: i64 = 3;
+const PROCESS_PROGRESS_EVENT: &str = "process-progress";
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -28,6 +29,18 @@ struct ImportMemoriesResult {
 struct ProcessMemoriesResult {
     processed_count: usize,
     failed_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessProgressPayload {
+    total_files: usize,
+    completed_files: usize,
+    successful_files: usize,
+    failed_files: usize,
+    memory_item_id: Option<i64>,
+    status: String,
+    error_message: Option<String>,
 }
 
 fn memories_db_url(app: &tauri::AppHandle) -> Result<String, String> {
@@ -454,6 +467,7 @@ async fn apply_metadata_to_output_files(
 #[tauri::command]
 async fn process_downloaded_memories(
     app: tauri::AppHandle,
+    window: tauri::Window,
     output_dir: String,
     keep_originals: bool,
 ) -> Result<ProcessMemoriesResult, String> {
@@ -475,17 +489,19 @@ async fn process_downloaded_memories(
     .map_err(|error| format!("failed to load downloaded memories for processing: {error}"))?;
 
     let output_path = std::path::Path::new(&output_dir);
-    let processed_dir = output_path.join("processed");
+    let raw_cache_path = std::path::Path::new(".raw_cache");
+    let thumbnail_path = output_path.join(".thumbnails");
 
     let mut processed_count = 0usize;
     let mut failed_count = 0usize;
+    let total_files = rows.len();
 
-    for row in rows {
+    for (index, row) in rows.into_iter().enumerate() {
         let memory_item_id = row.get::<i64, _>("id");
         let date_taken = row.get::<String, _>("date");
         let location = row.get::<Option<String>, _>("location");
 
-        let raw_media_path = find_output_file_for_memory_item(output_path, memory_item_id)
+        let raw_media_path = find_output_file_for_memory_item(raw_cache_path, memory_item_id)
             .map_err(|error| {
                 format!(
                     "failed while locating downloaded file for memory {}: {error}",
@@ -493,29 +509,7 @@ async fn process_downloaded_memories(
                 )
             })?;
 
-        let existing_processed_path =
-            find_output_file_for_memory_item(&processed_dir, memory_item_id).map_err(|error| {
-                format!(
-                    "failed while locating processed file for memory {}: {error}",
-                    memory_item_id
-                )
-            })?;
-
-        let final_output_path = if let Some(raw_media_path) = &raw_media_path {
-            processed_dir.join(
-                raw_media_path
-                    .file_name()
-                    .and_then(|value| value.to_str())
-                    .ok_or_else(|| {
-                        format!(
-                            "downloaded file for memory {} has an invalid filename",
-                            memory_item_id
-                        )
-                    })?,
-            )
-        } else if let Some(existing_processed_path) = existing_processed_path {
-            existing_processed_path
-        } else {
+        let Some(raw_media_path) = raw_media_path else {
             failed_count += 1;
             sqlx::query(
                 "
@@ -535,78 +529,42 @@ async fn process_downloaded_memories(
                     memory_item_id
                 )
             })?;
+
+            window
+                .emit(
+                    PROCESS_PROGRESS_EVENT,
+                    ProcessProgressPayload {
+                        total_files,
+                        completed_files: index + 1,
+                        successful_files: processed_count,
+                        failed_files: failed_count,
+                        memory_item_id: Some(memory_item_id),
+                        status: "error".to_string(),
+                        error_message: Some("downloaded source file is missing".to_string()),
+                    },
+                )
+                .map_err(|error| format!("failed to emit processing progress event: {error}"))?;
             continue;
         };
 
         let overlay_path =
-            find_overlay_file_for_memory_item(output_path, memory_item_id).map_err(|error| {
+            find_overlay_file_for_memory_item(raw_cache_path, memory_item_id).map_err(|error| {
                 format!(
                     "failed while locating overlay file for memory {}: {error}",
                     memory_item_id
                 )
             })?;
 
-        if !final_output_path.exists() {
-            let Some(raw_media_path) = raw_media_path.as_ref() else {
-                failed_count += 1;
-                sqlx::query(
-                    "
-                    UPDATE MemoryItem
-                    SET status = 'processing_failed',
-                        last_error_code = 'MISSING_DOWNLOADED_FILE',
-                        last_error_message = 'downloaded source file is missing'
-                    WHERE id = ?1
-                    ",
-                )
-                .bind(memory_item_id)
-                .execute(&pool)
-                .await
-                .map_err(|error| {
-                    format!(
-                        "failed to update missing-file status for memory {}: {error}",
-                        memory_item_id
-                    )
-                })?;
-                continue;
-            };
-
-            let merge_result = core::media::merge_media_with_optional_overlay(
-                raw_media_path,
-                overlay_path.as_deref(),
-                &final_output_path,
-            )
-            .await;
-
-            if let Err(error) = merge_result {
-                failed_count += 1;
-                sqlx::query(
-                    "
-                    UPDATE MemoryItem
-                    SET status = 'processing_failed',
-                        last_error_code = 'PROCESSING_FAILED',
-                        last_error_message = ?1
-                    WHERE id = ?2
-                    ",
-                )
-                .bind(error.to_string())
-                .bind(memory_item_id)
-                .execute(&pool)
-                .await
-                .map_err(|db_error| {
-                    format!(
-                        "failed to update processing failure status for memory {}: {db_error}",
-                        memory_item_id
-                    )
-                })?;
-                continue;
-            }
-        }
-
-        if let Err(error) = core::media::write_metadata_with_ffmpeg(
-            &final_output_path,
-            &date_taken,
-            location.as_deref(),
-        )
+        if let Err(error) = core::processor::process_media(core::processor::ProcessMediaInput {
+            memory_item_id,
+            raw_media_paths: vec![raw_media_path.clone()],
+            overlay_path,
+            date_taken,
+            location,
+            export_dir: output_path.to_path_buf(),
+            thumbnail_dir: thumbnail_path.clone(),
+            keep_originals,
+        })
         .await
         {
             failed_count += 1;
@@ -614,7 +572,7 @@ async fn process_downloaded_memories(
                 "
                 UPDATE MemoryItem
                 SET status = 'processing_failed',
-                    last_error_code = 'METADATA_FAILED',
+                    last_error_code = 'PROCESSING_FAILED',
                     last_error_message = ?1
                 WHERE id = ?2
                 ",
@@ -629,25 +587,24 @@ async fn process_downloaded_memories(
                     memory_item_id
                 )
             })?;
-            continue;
-        }
 
-        if !keep_originals {
-            let raw_cleanup_target = raw_media_path
-                .as_deref()
-                .unwrap_or(final_output_path.as_path());
-            core::media::cleanup_intermediate_files(
-                raw_cleanup_target,
-                overlay_path.as_deref(),
-                &final_output_path,
-            )
-            .await
-            .map_err(|error| {
-                format!(
-                    "failed to cleanup intermediate files for memory {}: {error}",
-                    memory_item_id
+            window
+                .emit(
+                    PROCESS_PROGRESS_EVENT,
+                    ProcessProgressPayload {
+                        total_files,
+                        completed_files: index + 1,
+                        successful_files: processed_count,
+                        failed_files: failed_count,
+                        memory_item_id: Some(memory_item_id),
+                        status: "error".to_string(),
+                        error_message: Some(error.to_string()),
+                    },
                 )
-            })?;
+                .map_err(|emit_error| {
+                    format!("failed to emit processing progress event: {emit_error}")
+                })?;
+            continue;
         }
 
         processed_count += 1;
@@ -669,6 +626,21 @@ async fn process_downloaded_memories(
                 memory_item_id
             )
         })?;
+
+        window
+            .emit(
+                PROCESS_PROGRESS_EVENT,
+                ProcessProgressPayload {
+                    total_files,
+                    completed_files: index + 1,
+                    successful_files: processed_count,
+                    failed_files: failed_count,
+                    memory_item_id: Some(memory_item_id),
+                    status: "success".to_string(),
+                    error_message: None,
+                },
+            )
+            .map_err(|error| format!("failed to emit processing progress event: {error}"))?;
     }
 
     pool.close().await;

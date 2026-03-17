@@ -47,10 +47,10 @@
 - [ ] **Verification:** Parse a JSON file twice. Query the SQLite DB and verify that `Memories` count remains the same (no duplicates) and multi-part videos have corresponding rows in `MediaChunks`.
 
 ### Phase 4: The Two-Button Workflow (Download & Process)
-- [ ] **Step 4.1:** In `src/features/downloader/components/Workflow.tsx`, implement the UI state: Show "Start Download" if un-downloaded chunks exist. Switch button to "Process Files" when downloads complete.
-- [ ] **Step 4.2:** In `src-tauri/src/core/downloader.rs`, implement `download_media` using `reqwest`. Download files to a `.raw_cache` folder. Update DB status.
-- [ ] **Step 4.3:** In `src-tauri/src/core/processor.rs`, implement `process_media`. Read from `.raw_cache`, run FFmpeg `concat` (for multi-part videos) and overlay burns, inject EXIF, generate a 300x300 `webp` thumbnail to `.thumbnails`, and move the final file to the user's export path.
-- [ ] **Step 4.4:** Emit progress events from Rust to update the Progress UI in React.
+- [x] **Step 4.1:** In `src/features/downloader/components/Workflow.tsx`, implement the UI state: Show "Start Download" if un-downloaded chunks exist. Switch button to "Process Files" when downloads complete.
+- [x] **Step 4.2:** In `src-tauri/src/core/downloader.rs`, implement `download_media` using `reqwest`. Download files to a `.raw_cache` folder. Update DB status.
+- [x] **Step 4.3:** In `src-tauri/src/core/processor.rs`, implement `process_media`. Read from `.raw_cache`, run FFmpeg `concat` (for multi-part videos) and overlay burns, inject EXIF, generate a 300x300 `webp` thumbnail to `.thumbnails`, and move the final file to the user's export path.
+- [x] **Step 4.4:** Emit progress events from Rust to update the Progress UI in React.
 - [ ] **Verification:** Click "Start Download" -> observe files in `.raw_cache`. Click "Process Files" -> observe processed files in output and `.webp` files in `.thumbnails`.
 
 ### Phase 5: Virtualized Viewer

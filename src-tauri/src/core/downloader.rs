@@ -262,30 +262,7 @@ async fn download_single_task_once(
     client: &reqwest::Client,
     task: &DownloadTask,
 ) -> Result<DownloadResult, DownloadError> {
-    let response = client
-        .get(&task.url)
-        .send()
-        .await
-        .map_err(|source| DownloadError::Http {
-            memory_item_id: task.memory_item_id,
-            url: task.url.clone(),
-            source,
-        })?
-        .error_for_status()
-        .map_err(|source| DownloadError::Http {
-            memory_item_id: task.memory_item_id,
-            url: task.url.clone(),
-            source,
-        })?;
-
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|source| DownloadError::Http {
-            memory_item_id: task.memory_item_id,
-            url: task.url.clone(),
-            source,
-        })?;
+    let bytes = download_media(client, task.memory_item_id, &task.url).await?;
 
     if let Some(parent_dir) = task.destination_path.parent() {
         tokio::fs::create_dir_all(parent_dir)
@@ -311,6 +288,39 @@ async fn download_single_task_once(
         destination_path: task.destination_path.clone(),
         bytes_written: bytes.len(),
     })
+}
+
+pub async fn download_media(
+    client: &reqwest::Client,
+    memory_item_id: i64,
+    url: &str,
+) -> Result<Vec<u8>, DownloadError> {
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|source| DownloadError::Http {
+            memory_item_id,
+            url: url.to_string(),
+            source,
+        })?
+        .error_for_status()
+        .map_err(|source| DownloadError::Http {
+            memory_item_id,
+            url: url.to_string(),
+            source,
+        })?;
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|source| DownloadError::Http {
+            memory_item_id,
+            url: url.to_string(),
+            source,
+        })?;
+
+    Ok(bytes.to_vec())
 }
 
 #[cfg(test)]
@@ -482,6 +492,36 @@ mod tests {
         .execute(&pool)
         .await
         .expect("memory table should be created for verification test");
+
+        sqlx::query(
+            "
+            CREATE TABLE IF NOT EXISTS Memories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                hash TEXT NOT NULL UNIQUE,
+                date TEXT NOT NULL,
+                status TEXT NOT NULL
+            )
+            ",
+        )
+        .execute(&pool)
+        .await
+        .expect("memories table should be created for verification test");
+
+        sqlx::query(
+            "
+            CREATE TABLE IF NOT EXISTS MediaChunks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                memory_id INTEGER NOT NULL,
+                url TEXT NOT NULL,
+                overlay_url TEXT,
+                order_index INTEGER NOT NULL,
+                FOREIGN KEY (memory_id) REFERENCES Memories(id)
+            )
+            ",
+        )
+        .execute(&pool)
+        .await
+        .expect("media chunks table should be created for verification test");
         pool.close().await;
 
         let mock_items = (1..=10)

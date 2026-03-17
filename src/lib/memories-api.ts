@@ -36,10 +36,24 @@ export type ProcessMemoriesResult = {
   failedCount: number;
 };
 
+export type ProcessProgressPayload = {
+  totalFiles: number;
+  completedFiles: number;
+  successfulFiles: number;
+  failedFiles: number;
+  memoryItemId: number | null;
+  status: string;
+  errorMessage: string | null;
+};
+
 export async function importMemoriesJson(
   jsonContent: string,
 ): Promise<ImportMemoriesResult> {
   return invoke<ImportMemoriesResult>("import_memories_json", { jsonContent });
+}
+
+export async function validateMemoryFile(path: string): Promise<boolean> {
+  return invoke<boolean>("validate_memory_file", { path });
 }
 
 export async function downloadQueuedMemories(
@@ -70,6 +84,14 @@ export async function onDownloadProgress(
   callback: (payload: DownloadProgressPayload) => void,
 ): Promise<UnlistenFn> {
   return listen<DownloadProgressPayload>("download-progress", (event) => {
+    callback(event.payload);
+  });
+}
+
+export async function onProcessProgress(
+  callback: (payload: ProcessProgressPayload) => void,
+): Promise<UnlistenFn> {
+  return listen<ProcessProgressPayload>("process-progress", (event) => {
     callback(event.payload);
   });
 }
