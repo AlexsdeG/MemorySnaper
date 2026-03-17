@@ -60,9 +60,9 @@
 - [ ] **Verification:** Populate the DB with 5,000 mock entries. Scroll the Viewer rapidly. Verify memory usage in Task Manager remains stable (no memory leaks or DOM node explosion).
 
 ### Phase 6: Settings & Rate Limiting
-- [ ] **Step 6.1:** In `src/features/settings/components/SettingsForm.tsx`, create an input for "Requests per Minute" and "Concurrent Downloads". Show a red warning text if Requests per Minute > 100 or Concurrent > 5.
-- [ ] **Step 6.2:** Save these settings in local storage or SQLite.
-- [ ] **Step 6.3:** In `src-tauri/src/core/downloader.rs`, wrap the `tokio` HTTP requests in a `tokio::sync::Semaphore` initialized with the "Concurrent Downloads" setting, and implement a time delay to respect "Requests per Minute".
+- [x] **Step 6.1:** In `src/features/settings/components/SettingsForm.tsx`, create an input for "Requests per Minute" and "Concurrent Downloads". Show a red warning text if Requests per Minute > 100 or Concurrent > 5.
+- [x] **Step 6.2:** Save these settings in local storage or SQLite.
+- [x] **Step 6.3:** In `src-tauri/src/core/downloader.rs`, wrap the `tokio` HTTP requests in a `tokio::sync::Semaphore` initialized with the "Concurrent Downloads" setting, and implement a time delay to respect "Requests per Minute".
 - [ ] **Verification:** Set rate limit to 10 RPM. Start download. Verify via console logs that Rust waits ~6 seconds between HTTP requests.
 
 ## 3. Global Testing Strategy

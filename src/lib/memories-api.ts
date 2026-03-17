@@ -51,6 +51,11 @@ export type ThumbnailItem = {
   thumbnailPath: string;
 };
 
+export type DownloadRateLimitSettings = {
+  requestsPerMinute: number;
+  concurrentDownloads: number;
+};
+
 export async function importMemoriesJson(
   jsonContent: string,
 ): Promise<ImportMemoriesResult> {
@@ -63,12 +68,24 @@ export async function validateMemoryFile(path: string): Promise<boolean> {
 
 export async function downloadQueuedMemories(
   outputDir: string,
+  settings?: DownloadRateLimitSettings,
 ): Promise<number> {
-  return invoke<number>("download_queued_memories", { outputDir });
+  return invoke<number>("download_queued_memories", {
+    outputDir,
+    requestsPerMinute: settings?.requestsPerMinute,
+    concurrentDownloads: settings?.concurrentDownloads,
+  });
 }
 
-export async function resumeExportDownloads(outputDir: string): Promise<number> {
-  return invoke<number>("resume_export_downloads", { outputDir });
+export async function resumeExportDownloads(
+  outputDir: string,
+  settings?: DownloadRateLimitSettings,
+): Promise<number> {
+  return invoke<number>("resume_export_downloads", {
+    outputDir,
+    requestsPerMinute: settings?.requestsPerMinute,
+    concurrentDownloads: settings?.concurrentDownloads,
+  });
 }
 
 export async function getJobState(): Promise<ExportJobState> {

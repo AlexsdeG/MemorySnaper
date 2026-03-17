@@ -134,6 +134,8 @@ async fn download_queued_memories(
     app: tauri::AppHandle,
     window: tauri::Window,
     output_dir: String,
+    requests_per_minute: Option<u32>,
+    concurrent_downloads: Option<u32>,
 ) -> Result<usize, String> {
     let database_url = memories_db_url(&app)?;
     let pool = sqlx::SqlitePool::connect(&database_url)
@@ -195,9 +197,22 @@ async fn download_queued_memories(
         })
         .collect::<Vec<_>>();
 
-    let download_results = core::downloader::download_tasks_with_progress(&window, tasks)
-        .await
-        .map_err(|error| format!("download manager failed: {error}"))?;
+    let rate_limits = core::downloader::DownloadRateLimits {
+        requests_per_minute: requests_per_minute
+            .map(|value| value as usize)
+            .unwrap_or(core::downloader::DEFAULT_REQUESTS_PER_MINUTE),
+        concurrent_downloads: concurrent_downloads
+            .map(|value| value as usize)
+            .unwrap_or(core::downloader::MAX_CONCURRENT_DOWNLOADS),
+    };
+
+    let download_results = core::downloader::download_tasks_with_progress_and_rate_limits(
+        &window,
+        tasks,
+        rate_limits,
+    )
+    .await
+    .map_err(|error| format!("download manager failed: {error}"))?;
 
     let mut successful_downloads = 0usize;
     let mut successful_media_ids = Vec::new();
@@ -388,8 +403,17 @@ async fn resume_export_downloads(
     app: tauri::AppHandle,
     window: tauri::Window,
     output_dir: String,
+    requests_per_minute: Option<u32>,
+    concurrent_downloads: Option<u32>,
 ) -> Result<usize, String> {
-    download_queued_memories(app, window, output_dir).await
+    download_queued_memories(
+        app,
+        window,
+        output_dir,
+        requests_per_minute,
+        concurrent_downloads,
+    )
+    .await
 }
 
 #[tauri::command]

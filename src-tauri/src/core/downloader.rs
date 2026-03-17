@@ -8,9 +8,58 @@ use tauri::Emitter;
 use tokio::sync::Semaphore;
 
 pub const MAX_CONCURRENT_DOWNLOADS: usize = 10;
+pub const DEFAULT_REQUESTS_PER_MINUTE: usize = 120;
 pub const DOWNLOAD_PROGRESS_EVENT: &str = "download-progress";
 const MAX_TRANSIENT_RETRIES: usize = 2;
 const BASE_RETRY_DELAY_MS: u64 = 400;
+
+#[derive(Debug, Clone, Copy)]
+pub struct DownloadRateLimits {
+    pub requests_per_minute: usize,
+    pub concurrent_downloads: usize,
+}
+
+impl Default for DownloadRateLimits {
+    fn default() -> Self {
+        Self {
+            requests_per_minute: DEFAULT_REQUESTS_PER_MINUTE,
+            concurrent_downloads: MAX_CONCURRENT_DOWNLOADS,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct RequestRateLimiter {
+    min_interval: Duration,
+    next_allowed_at: tokio::sync::Mutex<tokio::time::Instant>,
+}
+
+impl RequestRateLimiter {
+    fn from_requests_per_minute(requests_per_minute: usize) -> Self {
+        let safe_requests_per_minute = requests_per_minute.max(1);
+        let seconds_per_request = 60.0 / safe_requests_per_minute as f64;
+        let min_interval = Duration::from_secs_f64(seconds_per_request);
+
+        Self {
+            min_interval,
+            next_allowed_at: tokio::sync::Mutex::new(tokio::time::Instant::now()),
+        }
+    }
+
+    async fn wait_turn(&self) {
+        let mut next_allowed_at = self.next_allowed_at.lock().await;
+        let now = tokio::time::Instant::now();
+
+        if *next_allowed_at > now {
+            let delay = *next_allowed_at - now;
+            println!("rate-limit wait {:?} before next request", delay);
+            tokio::time::sleep_until(*next_allowed_at).await;
+        }
+
+        let baseline = std::cmp::max(*next_allowed_at, tokio::time::Instant::now());
+        *next_allowed_at = baseline + self.min_interval;
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct DownloadTask {
@@ -146,22 +195,34 @@ impl std::error::Error for DownloadError {}
 pub async fn download_tasks(
     tasks: Vec<DownloadTask>,
 ) -> Result<Vec<Result<DownloadResult, DownloadError>>, DownloadError> {
-    download_tasks_internal(tasks, None).await
+    download_tasks_internal(tasks, None, DownloadRateLimits::default()).await
 }
 
 pub async fn download_tasks_with_progress(
     window: &tauri::Window,
     tasks: Vec<DownloadTask>,
 ) -> Result<Vec<Result<DownloadResult, DownloadError>>, DownloadError> {
-    download_tasks_internal(tasks, Some(window)).await
+    download_tasks_internal(tasks, Some(window), DownloadRateLimits::default()).await
+}
+
+pub async fn download_tasks_with_progress_and_rate_limits(
+    window: &tauri::Window,
+    tasks: Vec<DownloadTask>,
+    rate_limits: DownloadRateLimits,
+) -> Result<Vec<Result<DownloadResult, DownloadError>>, DownloadError> {
+    download_tasks_internal(tasks, Some(window), rate_limits).await
 }
 
 async fn download_tasks_internal(
     tasks: Vec<DownloadTask>,
     window: Option<&tauri::Window>,
+    rate_limits: DownloadRateLimits,
 ) -> Result<Vec<Result<DownloadResult, DownloadError>>, DownloadError> {
     let client = reqwest::Client::new();
-    let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_DOWNLOADS));
+    let semaphore = Arc::new(Semaphore::new(rate_limits.concurrent_downloads.max(1)));
+    let request_rate_limiter = Arc::new(RequestRateLimiter::from_requests_per_minute(
+        rate_limits.requests_per_minute,
+    ));
     let total_files = tasks.len();
 
     let mut handles = Vec::with_capacity(tasks.len());
@@ -169,12 +230,14 @@ async fn download_tasks_internal(
     for task in tasks {
         let semaphore = semaphore.clone();
         let client = client.clone();
+        let request_rate_limiter = request_rate_limiter.clone();
 
         handles.push(tokio::spawn(async move {
             let _permit = semaphore
                 .acquire_owned()
                 .await
                 .map_err(DownloadError::Semaphore)?;
+            request_rate_limiter.wait_turn().await;
             download_single_task(&client, task).await
         }));
     }

@@ -10,6 +10,7 @@ import {
   onProcessProgress,
   processDownloadedMemories,
   validateMemoryFile,
+  type DownloadRateLimitSettings,
   type DownloadProgressPayload,
   type ExportJobState,
   type ProcessProgressPayload,
@@ -29,6 +30,8 @@ type UploadableFile = File & {
   readonly path?: string;
 };
 
+const SETTINGS_STORAGE_KEY = "memorysnaper.rate-limit-settings";
+
 function inferWorkflowStage(jobState: ExportJobState): WorkflowStage {
   if (jobState.totalFiles > 0 && jobState.downloadedFiles >= jobState.totalFiles) {
     return "process";
@@ -43,6 +46,34 @@ function normalizeError(error: unknown): string {
   }
 
   return "Operation failed. Please try again.";
+}
+
+function loadRateLimitSettings(): DownloadRateLimitSettings | undefined {
+  const rawSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+  if (!rawSettings) {
+    return undefined;
+  }
+
+  try {
+    const parsedValue: unknown = JSON.parse(rawSettings);
+    if (!parsedValue || typeof parsedValue !== "object") {
+      return undefined;
+    }
+
+    const requestsPerMinute = Reflect.get(parsedValue, "requestsPerMinute");
+    const concurrentDownloads = Reflect.get(parsedValue, "concurrentDownloads");
+
+    if (typeof requestsPerMinute !== "number" || typeof concurrentDownloads !== "number") {
+      return undefined;
+    }
+
+    return {
+      requestsPerMinute,
+      concurrentDownloads,
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 export function Workflow() {
@@ -197,7 +228,7 @@ export function Workflow() {
     try {
       setStatusMessage("Downloading queued media...");
       setDownloadProgress(null);
-      const downloadedCount = await downloadQueuedMemories(".raw_cache");
+      const downloadedCount = await downloadQueuedMemories(".raw_cache", loadRateLimitSettings());
       const currentJobState = await getJobState();
       setJobState(currentJobState);
       setWorkflowStage(inferWorkflowStage(currentJobState));
