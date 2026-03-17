@@ -1,0 +1,9 @@
+[submodule "tauri"]
+	path = tauri
+	url = https://github.com/tauri-apps/tauri.git
+	branch = master
+
+[submodule "src-tauri"]
+	path = src-tauri
+	url = https://example.com/your-org/src-tauri.git
+	branch = master
