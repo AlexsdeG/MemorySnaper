@@ -9,7 +9,7 @@ import { SettingsForm } from "@/features/settings/components/SettingsForm";
 
 export function SettingsPlaceholder() {
   return (
-    <Card>
+    <Card className="w-full max-w-4xl mx-auto">
       <CardHeader>
         <CardTitle>Settings</CardTitle>
         <CardDescription>

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useTheme } from "next-themes";
+import { Button } from "@/components/ui/button";
 
 const REQUESTS_WARNING_THRESHOLD = 100;
 const CONCURRENCY_WARNING_THRESHOLD = 5;
@@ -18,7 +20,10 @@ function clampNonNegativeInteger(value: string): number {
   return parsedValue;
 }
 
+type ThemeOption = "light" | "dark" | "system";
+
 export function SettingsForm() {
+  const { theme, setTheme } = useTheme();
   const [requestsPerMinute, setRequestsPerMinute] = useState<number>(60);
   const [concurrentDownloads, setConcurrentDownloads] = useState<number>(3);
 
@@ -75,6 +80,22 @@ export function SettingsForm() {
 
   return (
     <form className="space-y-4" onSubmit={(event) => event.preventDefault()}>
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Appearance</p>
+        <div className="flex gap-2">
+          {(["light", "system", "dark"] as ThemeOption[]).map((option) => (
+            <Button
+              key={option}
+              type="button"
+              variant={theme === option ? "default" : "outline"}
+              className="flex-1 capitalize"
+              onClick={() => setTheme(option)}
+            >
+              {option}
+            </Button>
+          ))}
+        </div>
+      </div>
       <div className="space-y-2">
         <label htmlFor="requests-per-minute" className="text-sm font-medium">
           Requests per Minute

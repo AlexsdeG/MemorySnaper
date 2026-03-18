@@ -78,6 +78,7 @@ function loadRateLimitSettings(): DownloadRateLimitSettings | undefined {
 
 export function Workflow() {
   const [selectedFile, setSelectedFile] = useState<UploadableFile | null>(null);
+  const [hasFile, setHasFile] = useState(false);
   const [importState, setImportState] = useState<ImportState>("idle");
   const [workflowStage, setWorkflowStage] = useState<WorkflowStage>("download");
   const [jobState, setJobState] = useState<ExportJobState>({
@@ -174,6 +175,9 @@ export function Workflow() {
   const onFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.item(0) ?? null;
     setSelectedFile(file as UploadableFile | null);
+    const name = file?.name.toLowerCase() ?? "";
+    const valid = name.endsWith(".zip") || name.endsWith(".json");
+    setHasFile(file !== null && valid);
     setStatusMessage(file ? `Selected file: ${file.name}` : "No file selected.");
   };
 
@@ -265,7 +269,7 @@ export function Workflow() {
             onChange={onFileChange}
             className="block w-full text-sm"
           />
-          <Button type="button" onClick={onUpload} disabled={!selectedFile || isWorking}>
+          <Button type="button" onClick={onUpload} disabled={!hasFile || isWorking}>
             {importState === "idle" ? "Upload" : "Uploading..."}
           </Button>
         </div>

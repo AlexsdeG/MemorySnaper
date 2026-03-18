@@ -9,7 +9,7 @@ import { Workflow } from "@/features/downloader/components/Workflow";
 
 export function DownloaderPlaceholder() {
   return (
-    <Card>
+    <Card className="w-full max-w-4xl mx-auto">
       <CardHeader>
         <CardTitle>Downloader</CardTitle>
         <CardDescription>
