@@ -6,7 +6,7 @@ import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="memorysnaper-theme">
+    <ThemeProvider>
       <App />
     </ThemeProvider>
   </React.StrictMode>,
