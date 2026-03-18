@@ -28,8 +28,13 @@ export function ViewerPlaceholder() {
         const thumbnailRows = await getThumbnails(0, 5000);
         const mappedItems = thumbnailRows.map((row) => ({
           id: String(row.memoryItemId),
-          src: convertFileSrc(row.thumbnailPath),
+          src: convertFileSrc(row.thumbnailPath, "asset"),
         }));
+
+        console.log("[viewer] Loaded thumbnail rows", {
+          count: thumbnailRows.length,
+          sample: thumbnailRows.slice(0, 3),
+        });
 
         setItems(mappedItems);
         setStatus(

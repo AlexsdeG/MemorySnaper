@@ -72,6 +72,24 @@ fn memories_db_url(app: &tauri::AppHandle) -> Result<String, String> {
     Ok(format!("sqlite://{}", app_data_dir.to_string_lossy()))
 }
 
+fn resolve_output_dir(app: &tauri::AppHandle, output_dir: &str) -> Result<std::path::PathBuf, String> {
+    let requested_path = std::path::PathBuf::from(output_dir);
+    if requested_path.is_absolute() {
+        return Ok(requested_path);
+    }
+
+    let mut app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("failed to resolve app data directory for output dir: {error}"))?;
+
+    std::fs::create_dir_all(&app_data_dir)
+        .map_err(|error| format!("failed to create app data directory for output dir: {error}"))?;
+
+    app_data_dir.push(requested_path);
+    Ok(app_data_dir)
+}
+
     async fn setup_database(app: &tauri::AppHandle) -> Result<(), String> {
         let mut app_data_dir = app
             .path()
@@ -246,9 +264,14 @@ async fn download_queued_memories(
     requests_per_minute: Option<u32>,
     concurrent_downloads: Option<u32>,
 ) -> Result<usize, String> {
+    let resolved_output_dir = resolve_output_dir(&app, &output_dir)?;
+
     eprintln!(
-        "[downloader-debug] download_queued_memories start output_dir='{}' requests_per_minute={:?} concurrent_downloads={:?}",
-        output_dir, requests_per_minute, concurrent_downloads
+        "[downloader-debug] download_queued_memories start output_dir='{}' resolved_output_dir='{}' requests_per_minute={:?} concurrent_downloads={:?}",
+        output_dir,
+        resolved_output_dir.display(),
+        requests_per_minute,
+        concurrent_downloads
     );
 
     let database_url = memories_db_url(&app)?;
@@ -272,8 +295,9 @@ async fn download_queued_memories(
         .map_err(|error| format!("failed to convert total resumable file count: {error}"))?;
 
     eprintln!(
-        "[downloader-debug] queued rows loaded total_files={} output_dir='{}'",
-        total_files, output_dir
+        "[downloader-debug] queued rows loaded total_files={} resolved_output_dir='{}'",
+        total_files,
+        resolved_output_dir.display()
     );
 
     sqlx::query(
@@ -310,7 +334,7 @@ async fn download_queued_memories(
             core::downloader::DownloadTask {
                 memory_item_id: id,
                 url: media_url,
-                destination_path: std::path::Path::new(&output_dir)
+                destination_path: resolved_output_dir
                     .join(format!("{id}.{extension}")),
             }
         })
@@ -450,7 +474,7 @@ async fn download_queued_memories(
             Some(core::downloader::DownloadTask {
                 memory_item_id: *memory_item_id,
                 url: overlay_url.clone(),
-                destination_path: std::path::Path::new(&output_dir)
+                destination_path: resolved_output_dir
                     .join(format!("{memory_item_id}.overlay.{extension}")),
             })
         })
@@ -695,7 +719,7 @@ async fn get_thumbnails(
 
     pool.close().await;
 
-    let thumbnails_dir = std::path::Path::new(".raw_cache").join(".thumbnails");
+    let thumbnails_dir = resolve_output_dir(&app, ".raw_cache")?.join(".thumbnails");
 
     let items = rows
         .into_iter()
@@ -707,9 +731,12 @@ async fn get_thumbnails(
                 return None;
             }
 
+            let resolved_thumbnail_path = std::fs::canonicalize(&thumbnail_path)
+                .unwrap_or(thumbnail_path);
+
             Some(ThumbnailItem {
                 memory_item_id,
-                thumbnail_path: thumbnail_path.to_string_lossy().to_string(),
+                thumbnail_path: resolved_thumbnail_path.to_string_lossy().to_string(),
             })
         })
         .collect::<Vec<_>>();
@@ -763,10 +790,9 @@ async fn reset_all_app_data(app: tauri::AppHandle) -> Result<(), String> {
 
     pool.close().await;
 
-    let cache_paths = [
-        std::path::Path::new(".raw_cache"),
-        std::path::Path::new(".thumbnails"),
-    ];
+    let raw_cache_path = resolve_output_dir(&app, ".raw_cache")?;
+    let thumbnails_cache_path = raw_cache_path.join(".thumbnails");
+    let cache_paths = [raw_cache_path.as_path(), thumbnails_cache_path.as_path()];
 
     for cache_path in cache_paths {
         if !cache_path.exists() {
@@ -781,7 +807,7 @@ async fn reset_all_app_data(app: tauri::AppHandle) -> Result<(), String> {
         })?;
     }
 
-    std::fs::create_dir_all(std::path::Path::new(".raw_cache"))
+    std::fs::create_dir_all(&raw_cache_path)
         .map_err(|error| format!("failed to recreate .raw_cache directory: {error}"))?;
 
     Ok(())
@@ -794,64 +820,184 @@ async fn process_downloaded_memories(
     output_dir: String,
     keep_originals: bool,
 ) -> Result<ProcessMemoriesResult, String> {
+    #[derive(Debug)]
+    struct ProcessUnit {
+        memory_group_id: Option<i64>,
+        progress_item_id: i64,
+        memory_item_ids: Vec<i64>,
+        date_taken: String,
+        location: Option<String>,
+    }
+
+    let resolved_output_dir = resolve_output_dir(&app, &output_dir)?;
+
+    eprintln!(
+        "[processor-debug] process_downloaded_memories start output_dir='{}' resolved_output_dir='{}' keep_originals={}",
+        output_dir,
+        resolved_output_dir.display(),
+        keep_originals
+    );
+
     let database_url = memories_db_url(&app)?;
     let pool = sqlx::SqlitePool::connect(&database_url)
         .await
         .map_err(|error| format!("failed to connect to memories database: {error}"))?;
 
-    let rows = sqlx::query(
+    let chunk_rows = sqlx::query(
         "
-        SELECT id, date, location
-        FROM MemoryItem
-        WHERE status IN ('downloaded', 'processing_failed')
-        ORDER BY id ASC
+        SELECT
+            mc.memory_id AS memory_id,
+            mc.order_index AS order_index,
+            mi.id AS memory_item_id,
+            mi.date AS date,
+            mi.location AS location
+        FROM MediaChunks mc
+        JOIN MemoryItem mi
+            ON mi.media_url = mc.url
+           AND IFNULL(mi.overlay_url, '') = IFNULL(mc.overlay_url, '')
+        WHERE mi.status IN ('downloaded', 'processing_failed')
+        ORDER BY mc.memory_id ASC, mc.order_index ASC, mi.id ASC
         ",
     )
     .fetch_all(&pool)
     .await
-    .map_err(|error| format!("failed to load downloaded memories for processing: {error}"))?;
+    .map_err(|error| format!("failed to load grouped downloaded memories for processing: {error}"))?;
 
-    let output_path = std::path::Path::new(&output_dir);
-    let raw_cache_path = std::path::Path::new(".raw_cache");
+    let process_units: Vec<ProcessUnit> = if chunk_rows.is_empty() {
+        eprintln!(
+            "[processor-debug] no MediaChunks groups found, falling back to per-item processing"
+        );
+
+        let fallback_rows = sqlx::query(
+            "
+            SELECT id, date, location
+            FROM MemoryItem
+            WHERE status IN ('downloaded', 'processing_failed')
+            ORDER BY id ASC
+            ",
+        )
+        .fetch_all(&pool)
+        .await
+        .map_err(|error| {
+            format!("failed to load downloaded memories for fallback processing: {error}")
+        })?;
+
+        fallback_rows
+            .into_iter()
+            .map(|row| {
+                let memory_item_id = row.get::<i64, _>("id");
+                ProcessUnit {
+                    memory_group_id: None,
+                    progress_item_id: memory_item_id,
+                    memory_item_ids: vec![memory_item_id],
+                    date_taken: row.get::<String, _>("date"),
+                    location: row.get::<Option<String>, _>("location"),
+                }
+            })
+            .collect()
+    } else {
+        let mut grouped_units = std::collections::BTreeMap::<i64, ProcessUnit>::new();
+
+        for row in chunk_rows {
+            let memory_group_id = row.get::<i64, _>("memory_id");
+            let memory_item_id = row.get::<i64, _>("memory_item_id");
+            let date_taken = row.get::<String, _>("date");
+            let location = row.get::<Option<String>, _>("location");
+
+            let entry = grouped_units.entry(memory_group_id).or_insert_with(|| ProcessUnit {
+                memory_group_id: Some(memory_group_id),
+                progress_item_id: memory_item_id,
+                memory_item_ids: Vec::new(),
+                date_taken,
+                location,
+            });
+
+            if !entry.memory_item_ids.contains(&memory_item_id) {
+                entry.memory_item_ids.push(memory_item_id);
+            }
+        }
+
+        grouped_units.into_values().collect()
+    };
+
+    let output_path = resolved_output_dir.as_path();
+    let raw_cache_path = resolved_output_dir.as_path();
     let thumbnail_path = output_path.join(".thumbnails");
 
     let mut processed_count = 0usize;
     let mut failed_count = 0usize;
-    let total_files = rows.len();
+    let total_files = process_units.len();
 
-    for (index, row) in rows.into_iter().enumerate() {
-        let memory_item_id = row.get::<i64, _>("id");
-        let date_taken = row.get::<String, _>("date");
-        let location = row.get::<Option<String>, _>("location");
+    eprintln!(
+        "[processor-debug] process units loaded total_units={} resolved_output_dir='{}'",
+        total_files,
+        resolved_output_dir.display()
+    );
 
-        let raw_media_path = find_output_file_for_memory_item(raw_cache_path, memory_item_id)
-            .map_err(|error| {
-                format!(
-                    "failed while locating downloaded file for memory {}: {error}",
-                    memory_item_id
-                )
-            })?;
+    for (index, unit) in process_units.into_iter().enumerate() {
+        let mut raw_media_paths = Vec::with_capacity(unit.memory_item_ids.len());
+        let mut missing_file_for_item: Option<i64> = None;
 
-        let Some(raw_media_path) = raw_media_path else {
+        for memory_item_id in &unit.memory_item_ids {
+            let raw_media_path = find_output_file_for_memory_item(raw_cache_path, *memory_item_id)
+                .map_err(|error| {
+                    format!(
+                        "failed while locating downloaded file for memory {}: {error}",
+                        memory_item_id
+                    )
+                })?;
+
+            let Some(raw_media_path) = raw_media_path else {
+                missing_file_for_item = Some(*memory_item_id);
+                break;
+            };
+
+            raw_media_paths.push(raw_media_path);
+        }
+
+        if let Some(missing_memory_item_id) = missing_file_for_item {
             failed_count += 1;
-            sqlx::query(
-                "
-                UPDATE MemoryItem
-                SET status = 'processing_failed',
-                    last_error_code = 'MISSING_DOWNLOADED_FILE',
-                    last_error_message = 'downloaded source file is missing'
-                WHERE id = ?1
-                ",
-            )
-            .bind(memory_item_id)
-            .execute(&pool)
-            .await
-            .map_err(|error| {
-                format!(
-                    "failed to update missing-file status for memory {}: {error}",
-                    memory_item_id
+
+            eprintln!(
+                "[processor-debug] missing raw file memory_group={:?} progress_item_id={} missing_memory_item_id={}",
+                unit.memory_group_id,
+                unit.progress_item_id,
+                missing_memory_item_id
+            );
+
+            for memory_item_id in &unit.memory_item_ids {
+                sqlx::query(
+                    "
+                    UPDATE MemoryItem
+                    SET status = 'processing_failed',
+                        last_error_code = 'MISSING_DOWNLOADED_FILE',
+                        last_error_message = 'downloaded source file is missing'
+                    WHERE id = ?1
+                    ",
                 )
-            })?;
+                .bind(memory_item_id)
+                .execute(&pool)
+                .await
+                .map_err(|error| {
+                    format!(
+                        "failed to update missing-file status for memory {}: {error}",
+                        memory_item_id
+                    )
+                })?;
+            }
+
+            if let Some(memory_group_id) = unit.memory_group_id {
+                sqlx::query("UPDATE Memories SET status = 'processing_failed' WHERE id = ?1")
+                    .bind(memory_group_id)
+                    .execute(&pool)
+                    .await
+                    .map_err(|error| {
+                        format!(
+                            "failed to update processing_failed status for memory group {}: {error}",
+                            memory_group_id
+                        )
+                    })?;
+            }
 
             window
                 .emit(
@@ -861,7 +1007,7 @@ async fn process_downloaded_memories(
                         completed_files: index + 1,
                         successful_files: processed_count,
                         failed_files: failed_count,
-                        memory_item_id: Some(memory_item_id),
+                        memory_item_id: Some(unit.progress_item_id),
                         status: "error".to_string(),
                         error_code: Some(ProcessErrorCode::MissingDownloadedFile),
                         error_message: Some("downloaded source file is missing".to_string()),
@@ -869,22 +1015,45 @@ async fn process_downloaded_memories(
                 )
                 .map_err(|error| format!("failed to emit processing progress event: {error}"))?;
             continue;
+        }
+
+        let overlay_path = {
+            let mut found_overlay_path = None;
+
+            for memory_item_id in &unit.memory_item_ids {
+                let candidate_overlay_path =
+                    find_overlay_file_for_memory_item(raw_cache_path, *memory_item_id).map_err(
+                        |error| {
+                            format!(
+                                "failed while locating overlay file for memory {}: {error}",
+                                memory_item_id
+                            )
+                        },
+                    )?;
+
+                if candidate_overlay_path.is_some() {
+                    found_overlay_path = candidate_overlay_path;
+                    break;
+                }
+            }
+
+            found_overlay_path
         };
 
-        let overlay_path =
-            find_overlay_file_for_memory_item(raw_cache_path, memory_item_id).map_err(|error| {
-                format!(
-                    "failed while locating overlay file for memory {}: {error}",
-                    memory_item_id
-                )
-            })?;
+        eprintln!(
+            "[processor-debug] processing unit memory_group={:?} progress_item_id={} chunk_count={} overlay_present={}",
+            unit.memory_group_id,
+            unit.progress_item_id,
+            raw_media_paths.len(),
+            overlay_path.is_some()
+        );
 
         if let Err(error) = core::processor::process_media(core::processor::ProcessMediaInput {
-            memory_item_id,
-            raw_media_paths: vec![raw_media_path.clone()],
+            memory_item_id: unit.progress_item_id,
+            raw_media_paths,
             overlay_path,
-            date_taken,
-            location,
+            date_taken: unit.date_taken.clone(),
+            location: unit.location.clone(),
             export_dir: output_path.to_path_buf(),
             thumbnail_dir: thumbnail_path.clone(),
             keep_originals,
@@ -892,25 +1061,48 @@ async fn process_downloaded_memories(
         .await
         {
             failed_count += 1;
-            sqlx::query(
-                "
-                UPDATE MemoryItem
-                SET status = 'processing_failed',
-                    last_error_code = 'PROCESSING_FAILED',
-                    last_error_message = ?1
-                WHERE id = ?2
-                ",
-            )
-            .bind(error.to_string())
-            .bind(memory_item_id)
-            .execute(&pool)
-            .await
-            .map_err(|db_error| {
-                format!(
-                    "failed to update metadata failure status for memory {}: {db_error}",
-                    memory_item_id
+
+            eprintln!(
+                "[processor-debug] processing failure memory_group={:?} progress_item_id={} error={}",
+                unit.memory_group_id,
+                unit.progress_item_id,
+                error
+            );
+
+            for memory_item_id in &unit.memory_item_ids {
+                sqlx::query(
+                    "
+                    UPDATE MemoryItem
+                    SET status = 'processing_failed',
+                        last_error_code = 'PROCESSING_FAILED',
+                        last_error_message = ?1
+                    WHERE id = ?2
+                    ",
                 )
-            })?;
+                .bind(error.to_string())
+                .bind(memory_item_id)
+                .execute(&pool)
+                .await
+                .map_err(|db_error| {
+                    format!(
+                        "failed to update metadata failure status for memory {}: {db_error}",
+                        memory_item_id
+                    )
+                })?;
+            }
+
+            if let Some(memory_group_id) = unit.memory_group_id {
+                sqlx::query("UPDATE Memories SET status = 'processing_failed' WHERE id = ?1")
+                    .bind(memory_group_id)
+                    .execute(&pool)
+                    .await
+                    .map_err(|error| {
+                        format!(
+                            "failed to update processing_failed status for memory group {}: {error}",
+                            memory_group_id
+                        )
+                    })?;
+            }
 
             window
                 .emit(
@@ -920,7 +1112,7 @@ async fn process_downloaded_memories(
                         completed_files: index + 1,
                         successful_files: processed_count,
                         failed_files: failed_count,
-                        memory_item_id: Some(memory_item_id),
+                        memory_item_id: Some(unit.progress_item_id),
                         status: "error".to_string(),
                         error_code: Some(ProcessErrorCode::ProcessingFailed),
                         error_message: Some(error.to_string()),
@@ -933,24 +1125,40 @@ async fn process_downloaded_memories(
         }
 
         processed_count += 1;
-        sqlx::query(
-            "
-            UPDATE MemoryItem
-            SET status = 'processed',
-                last_error_code = NULL,
-                last_error_message = NULL
-            WHERE id = ?1
-            ",
-        )
-        .bind(memory_item_id)
-        .execute(&pool)
-        .await
-        .map_err(|error| {
-            format!(
-                "failed to update processed status for memory {}: {error}",
-                memory_item_id
+
+        for memory_item_id in &unit.memory_item_ids {
+            sqlx::query(
+                "
+                UPDATE MemoryItem
+                SET status = 'processed',
+                    last_error_code = NULL,
+                    last_error_message = NULL
+                WHERE id = ?1
+                ",
             )
-        })?;
+            .bind(memory_item_id)
+            .execute(&pool)
+            .await
+            .map_err(|error| {
+                format!(
+                    "failed to update processed status for memory {}: {error}",
+                    memory_item_id
+                )
+            })?;
+        }
+
+        if let Some(memory_group_id) = unit.memory_group_id {
+            sqlx::query("UPDATE Memories SET status = 'processed' WHERE id = ?1")
+                .bind(memory_group_id)
+                .execute(&pool)
+                .await
+                .map_err(|error| {
+                    format!(
+                        "failed to update processed status for memory group {}: {error}",
+                        memory_group_id
+                    )
+                })?;
+        }
 
         window
             .emit(
@@ -960,7 +1168,7 @@ async fn process_downloaded_memories(
                     completed_files: index + 1,
                     successful_files: processed_count,
                     failed_files: failed_count,
-                    memory_item_id: Some(memory_item_id),
+                    memory_item_id: Some(unit.progress_item_id),
                     status: "success".to_string(),
                     error_code: None,
                     error_message: None,
@@ -968,6 +1176,11 @@ async fn process_downloaded_memories(
             )
             .map_err(|error| format!("failed to emit processing progress event: {error}"))?;
     }
+
+    eprintln!(
+        "[processor-debug] process_downloaded_memories complete processed_count={} failed_count={} total_units={}",
+        processed_count, failed_count, total_files
+    );
 
     pool.close().await;
     Ok(ProcessMemoriesResult {

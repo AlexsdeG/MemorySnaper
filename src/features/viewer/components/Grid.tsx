@@ -65,6 +65,12 @@ export function Grid({ items }: GridProps) {
                       alt={t("viewer.grid.thumbnailAlt", { id: item.id })}
                       loading="lazy"
                       className="h-full w-full object-cover"
+                      onError={() => {
+                        console.error("[viewer] Thumbnail failed to load", {
+                          id: item.id,
+                          src: item.src,
+                        });
+                      }}
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">

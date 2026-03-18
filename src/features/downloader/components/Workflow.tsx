@@ -173,9 +173,10 @@ export function Workflow() {
   useEffect(() => {
     let unlistenDownload: (() => void) | null = null;
     let unlistenProcess: (() => void) | null = null;
+    let isDisposed = false;
 
     const startListeners = async () => {
-      unlistenDownload = await onDownloadProgress((payload: DownloadProgressPayload) => {
+      const downloadUnlisten = await onDownloadProgress((payload: DownloadProgressPayload) => {
         if (payload.status === "error") {
           console.error("[downloader] Download progress error event", payload);
         }
@@ -201,9 +202,25 @@ export function Workflow() {
         }
       });
 
-      unlistenProcess = await onProcessProgress((payload: ProcessProgressPayload) => {
+      if (isDisposed) {
+        downloadUnlisten();
+        return;
+      }
+
+      unlistenDownload = downloadUnlisten;
+
+      const processUnlisten = await onProcessProgress((payload: ProcessProgressPayload) => {
         if (payload.status === "error") {
+          const conciseReason = payload.errorMessage
+            ? payload.errorMessage.slice(0, 400)
+            : "unknown processing error";
+
+          console.error(
+            `[downloader] Process failed for memoryItemId=${payload.memoryItemId ?? "unknown"} ` +
+              `errorCode=${payload.errorCode ?? "unknown"} completed=${payload.completedFiles}/${payload.totalFiles} reason=${conciseReason}`,
+          );
           console.error("[downloader] Process progress error event", payload);
+          console.error("[downloader] Process progress error details", JSON.stringify(payload, null, 2));
         }
 
         setProcessProgress({
@@ -219,11 +236,19 @@ export function Workflow() {
           setNotice(translateProcessErrorCode(payload.errorCode), "error");
         }
       });
+
+      if (isDisposed) {
+        processUnlisten();
+        return;
+      }
+
+      unlistenProcess = processUnlisten;
     };
 
     void startListeners();
 
     return () => {
+      isDisposed = true;
       if (unlistenDownload) {
         unlistenDownload();
       }

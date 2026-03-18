@@ -83,16 +83,33 @@ pub async fn merge_media_with_optional_overlay(
                 let media_kind = media_kind_from_path(&base_media_path)
                     .ok_or_else(|| MediaError::UnsupportedMediaType(base_media_path.clone()))?;
 
+                let writes_in_place = paths_point_to_same_target(&base_media_path, &output_path);
+                let ffmpeg_output_path = if writes_in_place {
+                    temporary_output_path_with_suffix(&output_path, "overlay.tmp")?
+                } else {
+                    output_path.clone()
+                };
+
                 let args = build_ffmpeg_overlay_args(
                     &base_media_path,
                     &overlay_path,
-                    &output_path,
+                    &ffmpeg_output_path,
                     media_kind,
                 );
 
-                run_ffmpeg(args)
+                run_ffmpeg(args)?;
+
+                if writes_in_place {
+                    std::fs::rename(&ffmpeg_output_path, &output_path)?;
+                }
+
+                Ok(())
             }
             None => {
+                if paths_point_to_same_target(&base_media_path, &output_path) {
+                    return Ok(());
+                }
+
                 std::fs::copy(&base_media_path, &output_path)?;
                 Ok(())
             }
@@ -162,6 +179,8 @@ pub async fn cleanup_intermediate_files(
 }
 
 fn run_ffmpeg(args: Vec<String>) -> Result<(), MediaError> {
+    eprintln!("[processor-debug] ffmpeg args={}", args.join(" "));
+
     let output = Command::new("ffmpeg")
         .args(args)
         .output()
@@ -170,6 +189,12 @@ fn run_ffmpeg(args: Vec<String>) -> Result<(), MediaError> {
     if output.status.success() {
         return Ok(());
     }
+
+    eprintln!(
+        "[processor-debug] ffmpeg failure status={:?} stderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
 
     Err(MediaError::FfmpegFailed {
         status: output.status.code(),
@@ -267,7 +292,10 @@ fn build_ffmpeg_metadata_args(
         }
         MediaKind::Video => {
             args.push("-map".to_string());
-            args.push("0".to_string());
+            args.push("0:v".to_string());
+            args.push("-map".to_string());
+            args.push("0:a?".to_string());
+            args.push("-dn".to_string());
             args.push("-c".to_string());
             args.push("copy".to_string());
         }
@@ -310,14 +338,39 @@ fn parse_coordinates(value: &str) -> Option<(f64, f64)> {
 }
 
 fn temporary_output_path(media_path: &Path) -> Result<PathBuf, MediaError> {
-    let file_name = media_path
-        .file_name()
-        .and_then(|name| name.to_str())
+    temporary_output_path_with_suffix(media_path, "metadata.tmp")
+}
+
+fn temporary_output_path_with_suffix(media_path: &Path, suffix: &str) -> Result<PathBuf, MediaError> {
+    let stem = media_path
+        .file_stem()
+        .and_then(|value| value.to_str())
         .ok_or_else(|| {
-            MediaError::InvalidMetadata("media path does not contain a valid file name".to_string())
+            MediaError::InvalidMetadata("media path does not contain a valid file stem".to_string())
         })?;
 
-    Ok(media_path.with_file_name(format!("{file_name}.metadata.tmp")))
+    let extension = media_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| {
+            MediaError::InvalidMetadata("media path does not contain a valid extension".to_string())
+        })?;
+
+    Ok(media_path.with_file_name(format!("{stem}.{suffix}.{extension}")))
+}
+
+fn paths_point_to_same_target(left: &Path, right: &Path) -> bool {
+    if left == right {
+        return true;
+    }
+
+    let left_canonical = std::fs::canonicalize(left).ok();
+    let right_canonical = std::fs::canonicalize(right).ok();
+
+    match (left_canonical, right_canonical) {
+        (Some(left_canonical), Some(right_canonical)) => left_canonical == right_canonical,
+        _ => false,
+    }
 }
 
 fn remove_file_if_exists(path: &Path) -> Result<(), MediaError> {

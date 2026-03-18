@@ -73,6 +73,15 @@ pub async fn process_media(input: ProcessMediaInput) -> Result<ProcessMediaOutpu
     tokio::fs::create_dir_all(&input.export_dir).await?;
     tokio::fs::create_dir_all(&input.thumbnail_dir).await?;
 
+    eprintln!(
+        "[processor-debug] process_media start memory_item_id={} raw_count={} overlay_present={} export_dir='{}' keep_originals={}",
+        input.memory_item_id,
+        input.raw_media_paths.len(),
+        input.overlay_path.is_some(),
+        input.export_dir.display(),
+        input.keep_originals
+    );
+
     let extension = media_extension_from_path(&input.raw_media_paths[0]).unwrap_or("bin");
     let final_media_path = input
         .export_dir
@@ -84,6 +93,13 @@ pub async fn process_media(input: ProcessMediaInput) -> Result<ProcessMediaOutpu
         let concat_output_path = input
             .export_dir
             .join(format!("{}.concat.{}", input.memory_item_id, extension));
+
+        eprintln!(
+            "[processor-debug] concatenating parts memory_item_id={} parts={} concat_output='{}'",
+            input.memory_item_id,
+            input.raw_media_paths.len(),
+            concat_output_path.display()
+        );
 
         concat_video_parts(&input.raw_media_paths, &concat_output_path).await?;
         temp_concat_path = Some(concat_output_path);
@@ -114,6 +130,13 @@ pub async fn process_media(input: ProcessMediaInput) -> Result<ProcessMediaOutpu
 
     generate_webp_thumbnail(&final_media_path, &thumbnail_path).await?;
 
+    eprintln!(
+        "[processor-debug] process_media success memory_item_id={} final_media='{}' thumbnail='{}'",
+        input.memory_item_id,
+        final_media_path.display(),
+        thumbnail_path.display()
+    );
+
     if !input.keep_originals {
         for raw_media_path in &input.raw_media_paths {
             remove_file_if_exists(raw_media_path).await?;
@@ -140,14 +163,22 @@ async fn concat_video_parts(parts: &[PathBuf], output_path: &Path) -> Result<(),
 
     tokio::task::spawn_blocking(move || {
         let list_path = output_path.with_extension("concat.txt");
+        let list_path_for_ffmpeg = std::fs::canonicalize(&list_path).unwrap_or_else(|_| list_path.clone());
         let mut list_content = String::new();
 
         for part in &parts {
-            let escaped_path = part.to_string_lossy().replace('\'', "'\\''");
+            let absolute_part_path = std::fs::canonicalize(part).unwrap_or_else(|_| part.clone());
+            let escaped_path = absolute_part_path.to_string_lossy().replace('\'', "'\\''");
             list_content.push_str(&format!("file '{}'\n", escaped_path));
         }
 
         std::fs::write(&list_path, list_content)?;
+
+        eprintln!(
+            "[processor-debug] ffmpeg concat start parts={} output='{}'",
+            parts.len(),
+            output_path.display()
+        );
 
         let output = Command::new("ffmpeg")
             .args([
@@ -157,7 +188,7 @@ async fn concat_video_parts(parts: &[PathBuf], output_path: &Path) -> Result<(),
                 "-safe",
                 "0",
                 "-i",
-                &list_path.to_string_lossy(),
+                &list_path_for_ffmpeg.to_string_lossy(),
                 "-c",
                 "copy",
                 &output_path.to_string_lossy(),
@@ -190,6 +221,12 @@ async fn generate_webp_thumbnail(
         if let Some(parent) = thumbnail_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
+
+        eprintln!(
+            "[processor-debug] thumbnail generation start media='{}' thumbnail='{}'",
+            media_path.display(),
+            thumbnail_path.display()
+        );
 
         let output = Command::new("ffmpeg")
             .args([
