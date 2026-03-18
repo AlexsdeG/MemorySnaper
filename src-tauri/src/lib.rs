@@ -539,6 +539,13 @@ async fn validate_memory_file(path: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
+async fn validate_memory_json_content(json_content: String) -> Result<bool, String> {
+    core::parser::validate_memories_history_json_content(&json_content)
+        .map(|_| true)
+        .map_err(|error| format!("failed to validate memories json content: {error}"))
+}
+
+#[tauri::command]
 async fn apply_metadata_to_output_files(
     app: tauri::AppHandle,
     output_dir: String,
@@ -935,6 +942,7 @@ pub fn run() {
             set_job_state,
             import_memories_json,
             validate_memory_file,
+            validate_memory_json_content,
             download_queued_memories,
             resume_export_downloads,
             apply_metadata_to_output_files,

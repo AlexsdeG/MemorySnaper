@@ -112,8 +112,11 @@ pub async fn import_memories_history_file(
 
 pub async fn validate_memories_history_file(memories_history_path: &Path) -> Result<(), ParserError> {
     let json_content = load_memories_history_json(memories_history_path).await?;
-    let json_value: Value = serde_json::from_str(&json_content)?;
+    validate_memories_history_json_content(&json_content)
+}
 
+pub fn validate_memories_history_json_content(json_content: &str) -> Result<(), ParserError> {
+    let json_value: Value = serde_json::from_str(json_content)?;
     validate_snapchat_export_schema(&json_value)
 }
 

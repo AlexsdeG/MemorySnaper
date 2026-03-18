@@ -66,6 +66,10 @@ export async function validateMemoryFile(path: string): Promise<boolean> {
   return invoke<boolean>("validate_memory_file", { path });
 }
 
+export async function validateMemoryJsonContent(jsonContent: string): Promise<boolean> {
+  return invoke<boolean>("validate_memory_json_content", { jsonContent });
+}
+
 export async function downloadQueuedMemories(
   outputDir: string,
   settings?: DownloadRateLimitSettings,
