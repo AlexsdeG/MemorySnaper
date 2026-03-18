@@ -40,7 +40,15 @@ struct ProcessProgressPayload {
     failed_files: usize,
     memory_item_id: Option<i64>,
     status: String,
+    error_code: Option<ProcessErrorCode>,
     error_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum ProcessErrorCode {
+    MissingDownloadedFile,
+    ProcessingFailed,
 }
 
 #[derive(Debug, Serialize)]
@@ -146,6 +154,11 @@ fn memories_db_url(app: &tauri::AppHandle) -> Result<String, String> {
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+#[tauri::command]
+fn get_system_locale() -> Option<String> {
+    sys_locale::get_locale()
 }
 
 #[tauri::command]
@@ -732,6 +745,7 @@ async fn process_downloaded_memories(
                         failed_files: failed_count,
                         memory_item_id: Some(memory_item_id),
                         status: "error".to_string(),
+                        error_code: Some(ProcessErrorCode::MissingDownloadedFile),
                         error_message: Some("downloaded source file is missing".to_string()),
                     },
                 )
@@ -790,6 +804,7 @@ async fn process_downloaded_memories(
                         failed_files: failed_count,
                         memory_item_id: Some(memory_item_id),
                         status: "error".to_string(),
+                        error_code: Some(ProcessErrorCode::ProcessingFailed),
                         error_message: Some(error.to_string()),
                     },
                 )
@@ -829,6 +844,7 @@ async fn process_downloaded_memories(
                     failed_files: failed_count,
                     memory_item_id: Some(memory_item_id),
                     status: "success".to_string(),
+                    error_code: None,
                     error_message: None,
                 },
             )
@@ -937,6 +953,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             greet,
+            get_system_locale,
             get_job_state,
             get_queued_count,
             set_job_state,

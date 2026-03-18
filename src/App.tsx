@@ -4,42 +4,47 @@ import { Button } from "@/components/ui/button";
 import { DownloaderPlaceholder } from "@/features/downloader/components/DownloaderPlaceholder";
 import { SettingsPlaceholder } from "@/features/settings/components/SettingsPlaceholder";
 import { ViewerPlaceholder } from "@/features/viewer/components/ViewerPlaceholder";
+import { useI18n } from "@/lib/i18n";
 
 type TabKey = "downloader" | "viewer" | "settings";
 
-const tabs: Array<{ key: TabKey; label: string }> = [
-  { key: "downloader", label: "Downloader" },
-  { key: "viewer", label: "Viewer" },
-  { key: "settings", label: "Settings" },
-];
-
 function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("downloader");
+  const { t } = useI18n();
+
+  const tabs = useMemo<Array<{ key: TabKey; label: string }>>(
+    () => [
+      { key: "downloader", label: t("app.tabs.downloader") },
+      { key: "viewer", label: t("app.tabs.viewer") },
+      { key: "settings", label: t("app.tabs.settings") },
+    ],
+    [t],
+  );
 
   const tabContent = useMemo(() => {
     switch (activeTab) {
       case "downloader":
         return {
-          title: "Downloader",
+          title: t("app.section.downloader"),
           component: <DownloaderPlaceholder />,
         };
       case "viewer":
         return {
-          title: "Viewer",
+          title: t("app.section.viewer"),
           component: <ViewerPlaceholder />,
         };
       case "settings":
         return {
-          title: "Settings",
+          title: t("app.section.settings"),
           component: <SettingsPlaceholder />,
         };
       default:
         return {
-          title: "Downloader",
+          title: t("app.section.downloader"),
           component: <DownloaderPlaceholder />,
         };
     }
-  }, [activeTab]);
+  }, [activeTab, t]);
 
   return (
     <div className="flex h-screen w-full flex-col bg-background text-foreground">
@@ -64,8 +69,8 @@ function App() {
       <div className="flex-1 overflow-y-auto pb-16 md:pb-0">
         <main className="mx-auto w-full max-w-4xl px-4 py-6">
           <header className="mb-6">
-            <h1 className="text-2xl font-semibold tracking-tight">MemorySnaper</h1>
-            <p className="text-sm text-muted-foreground">Phase 1 tab layout scaffold</p>
+            <h1 className="text-2xl font-semibold tracking-tight">{t("app.header.title")}</h1>
+            <p className="text-sm text-muted-foreground">{t("app.header.subtitle")}</p>
           </header>
 
           <section aria-label={tabContent.title}>{tabContent.component}</section>

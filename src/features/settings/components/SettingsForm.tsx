@@ -1,15 +1,12 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
+import { readAppSettings, writeAppSettings } from "@/lib/app-settings";
+import { parseLanguagePreference, type LanguagePreference } from "@/lib/language";
+import { useI18n } from "@/lib/i18n";
 
 const REQUESTS_WARNING_THRESHOLD = 100;
 const CONCURRENCY_WARNING_THRESHOLD = 5;
-const SETTINGS_STORAGE_KEY = "memorysnaper.rate-limit-settings";
-
-type RateLimitSettings = {
-  requestsPerMinute: number;
-  concurrentDownloads: number;
-};
 
 function clampNonNegativeInteger(value: string): number {
   const parsedValue = Number.parseInt(value, 10);
@@ -21,46 +18,28 @@ function clampNonNegativeInteger(value: string): number {
 }
 
 type ThemeOption = "light" | "dark" | "system";
+const languageOptions: LanguagePreference[] = ["system", "en", "de"];
 
 export function SettingsForm() {
   const { theme, setTheme } = useTheme();
+  const { languagePreference, resolvedLocale, setLanguagePreference, t } = useI18n();
   const [requestsPerMinute, setRequestsPerMinute] = useState<number>(10);
   const [concurrentDownloads, setConcurrentDownloads] = useState<number>(3);
 
   useEffect(() => {
-    const rawValue = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (!rawValue) {
-      return;
-    }
-
-    try {
-      const parsedValue: unknown = JSON.parse(rawValue);
-      if (!parsedValue || typeof parsedValue !== "object") {
-        return;
-      }
-
-      const storedRequests = Reflect.get(parsedValue, "requestsPerMinute");
-      const storedConcurrent = Reflect.get(parsedValue, "concurrentDownloads");
-
-      if (typeof storedRequests === "number" && Number.isFinite(storedRequests)) {
-        setRequestsPerMinute(Math.max(0, Math.floor(storedRequests)));
-      }
-
-      if (typeof storedConcurrent === "number" && Number.isFinite(storedConcurrent)) {
-        setConcurrentDownloads(Math.max(0, Math.floor(storedConcurrent)));
-      }
-    } catch {
-      window.localStorage.removeItem(SETTINGS_STORAGE_KEY);
-    }
+    const settings = readAppSettings();
+    setRequestsPerMinute(settings.requestsPerMinute);
+    setConcurrentDownloads(settings.concurrentDownloads);
   }, []);
 
   useEffect(() => {
-    const settings: RateLimitSettings = {
+    const currentSettings = readAppSettings();
+    writeAppSettings({
+      ...currentSettings,
       requestsPerMinute,
       concurrentDownloads,
-    };
-
-    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+      languagePreference,
+    });
   }, [concurrentDownloads, requestsPerMinute]);
 
   const showWarning = useMemo(
@@ -78,27 +57,63 @@ export function SettingsForm() {
     setConcurrentDownloads(clampNonNegativeInteger(event.target.value));
   };
 
+  const onLanguagePreferenceChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    setLanguagePreference(parseLanguagePreference(event.target.value));
+  };
+
   return (
     <form className="space-y-4" onSubmit={(event) => event.preventDefault()}>
       <div className="space-y-2">
-        <p className="text-sm font-medium">Appearance</p>
+        <p className="text-sm font-medium">{t("settings.form.appearance")}</p>
         <div className="flex gap-2">
           {(["light", "system", "dark"] as ThemeOption[]).map((option) => (
             <Button
               key={option}
               type="button"
               variant={theme === option ? "default" : "outline"}
-              className="flex-1 capitalize"
+              className="flex-1"
               onClick={() => setTheme(option)}
             >
-              {option}
+              {option === "light"
+                ? t("settings.form.theme.light")
+                : option === "dark"
+                  ? t("settings.form.theme.dark")
+                  : t("settings.form.theme.system")}
             </Button>
           ))}
         </div>
       </div>
+
+      <div className="space-y-2">
+        <label htmlFor="language-preference" className="text-sm font-medium">
+          {t("settings.form.language")}
+        </label>
+        <select
+          id="language-preference"
+          value={languagePreference}
+          onChange={onLanguagePreferenceChange}
+          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+        >
+          {languageOptions.map((option) => (
+            <option key={option} value={option}>
+              {option === "system"
+                ? t("settings.form.language.system")
+                : option === "de"
+                  ? t("settings.form.language.de")
+                  : t("settings.form.language.en")}
+            </option>
+          ))}
+        </select>
+        {languagePreference === "system" ? (
+          <p className="text-xs text-muted-foreground">
+            {t("settings.form.language.detected", { locale: resolvedLocale.toUpperCase() })}
+          </p>
+        ) : null}
+      </div>
+
       <div className="space-y-2">
         <label htmlFor="requests-per-minute" className="text-sm font-medium">
-          Requests per Minute
+          {t("settings.form.requestsPerMinute")}
         </label>
         <input
           id="requests-per-minute"
@@ -113,7 +128,7 @@ export function SettingsForm() {
 
       <div className="space-y-2">
         <label htmlFor="concurrent-downloads" className="text-sm font-medium">
-          Concurrent Downloads
+          {t("settings.form.concurrentDownloads")}
         </label>
         <input
           id="concurrent-downloads"
@@ -128,7 +143,7 @@ export function SettingsForm() {
 
       {showWarning ? (
         <p className="text-sm text-red-600">
-          Warning: Values above 100 RPM or 5 concurrent downloads may trigger throttling.
+          {t("settings.form.warning")}
         </p>
       ) : null}
     </form>

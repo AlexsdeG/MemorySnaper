@@ -8,6 +8,10 @@ export type DownloadErrorCode =
   | "CONCURRENCY_ERROR"
   | "INTERNAL_ERROR";
 
+export type ProcessErrorCode =
+  | "MISSING_DOWNLOADED_FILE"
+  | "PROCESSING_FAILED";
+
 export type DownloadProgressPayload = {
   totalFiles: number;
   completedFiles: number;
@@ -43,6 +47,7 @@ export type ProcessProgressPayload = {
   failedFiles: number;
   memoryItemId: number | null;
   status: string;
+  errorCode: ProcessErrorCode | null;
   errorMessage: string | null;
 };
 
@@ -60,6 +65,10 @@ export async function importMemoriesJson(
   jsonContent: string,
 ): Promise<ImportMemoriesResult> {
   return invoke<ImportMemoriesResult>("import_memories_json", { jsonContent });
+}
+
+export async function getSystemLocale(): Promise<string | null> {
+  return invoke<string | null>("get_system_locale");
 }
 
 export async function validateMemoryFile(path: string): Promise<boolean> {

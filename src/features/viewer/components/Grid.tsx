@@ -1,6 +1,7 @@
 import { useMemo, useRef } from "react";
 
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { useI18n } from "@/lib/i18n";
 
 type ThumbnailItem = {
   id: string;
@@ -16,6 +17,7 @@ const ESTIMATED_ROW_HEIGHT = 140;
 const VIEWPORT_HEIGHT = 420;
 
 export function Grid({ items }: GridProps) {
+  const { t } = useI18n();
   const parentRef = useRef<HTMLDivElement>(null);
 
   const rows = useMemo(() => {
@@ -60,7 +62,7 @@ export function Grid({ items }: GridProps) {
                   {item.src ? (
                     <img
                       src={item.src}
-                      alt={`Thumbnail ${item.id}`}
+                      alt={t("viewer.grid.thumbnailAlt", { id: item.id })}
                       loading="lazy"
                       className="h-full w-full object-cover"
                     />

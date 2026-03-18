@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Grid } from "@/features/viewer/components/Grid";
+import { useI18n } from "@/lib/i18n";
 import { getThumbnails } from "@/lib/memories-api";
 
 type GridItem = {
@@ -17,8 +18,9 @@ type GridItem = {
 };
 
 export function ViewerPlaceholder() {
+  const { t } = useI18n();
   const [items, setItems] = useState<GridItem[]>([]);
-  const [status, setStatus] = useState("Loading thumbnails...");
+  const [status, setStatus] = useState(t("viewer.status.loading"));
 
   useEffect(() => {
     const loadThumbnails = async () => {
@@ -32,25 +34,23 @@ export function ViewerPlaceholder() {
         setItems(mappedItems);
         setStatus(
           mappedItems.length > 0
-            ? `Loaded ${mappedItems.length} thumbnails.`
-            : "No thumbnails available yet.",
+            ? t("viewer.status.loaded", { count: mappedItems.length })
+            : t("viewer.status.empty"),
         );
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Could not load thumbnails.";
-        setStatus(message);
+      } catch {
+        setStatus(t("viewer.status.loadFailed"));
       }
     };
 
     void loadThumbnails();
-  }, []);
+  }, [t]);
 
   return (
     <Card className="w-full max-w-4xl mx-auto">
       <CardHeader>
-        <CardTitle>Viewer</CardTitle>
+        <CardTitle>{t("viewer.card.title")}</CardTitle>
         <CardDescription>
-          Placeholder for the virtualized media grid and thumbnail previews.
+          {t("viewer.card.description")}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">

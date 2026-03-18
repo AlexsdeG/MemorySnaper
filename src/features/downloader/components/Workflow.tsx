@@ -2,8 +2,11 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { readAppSettings } from "@/lib/app-settings";
+import { useI18n } from "@/lib/i18n";
 import {
   downloadQueuedMemories,
+  type DownloadErrorCode,
   getJobState,
   getQueuedCount,
   importMemoriesJson,
@@ -15,6 +18,7 @@ import {
   type DownloadRateLimitSettings,
   type DownloadProgressPayload,
   type ExportJobState,
+  type ProcessErrorCode,
   type ProcessProgressPayload,
 } from "@/lib/memories-api";
 
@@ -26,6 +30,7 @@ type RuntimeProgress = {
   successfulFiles: number;
   failedFiles: number;
   status: string;
+  errorCode: DownloadErrorCode | ProcessErrorCode | null;
 };
 type ValidationState = "idle" | "validating" | "valid" | "invalid";
 type NoticeTone = "neutral" | "success" | "error";
@@ -33,8 +38,6 @@ type NoticeTone = "neutral" | "success" | "error";
 type UploadableFile = File & {
   readonly path?: string;
 };
-
-const SETTINGS_STORAGE_KEY = "memorysnaper.rate-limit-settings";
 
 function inferWorkflowStage(jobState: ExportJobState): WorkflowStage {
   if (jobState.totalFiles > 0 && jobState.downloadedFiles >= jobState.totalFiles) {
@@ -44,43 +47,17 @@ function inferWorkflowStage(jobState: ExportJobState): WorkflowStage {
   return "download";
 }
 
-function normalizeError(error: unknown): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
-  }
-
-  return "Operation failed. Please try again.";
-}
-
 function loadRateLimitSettings(): DownloadRateLimitSettings | undefined {
-  const rawSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
-  if (!rawSettings) {
-    return undefined;
-  }
+  const settings = readAppSettings();
 
-  try {
-    const parsedValue: unknown = JSON.parse(rawSettings);
-    if (!parsedValue || typeof parsedValue !== "object") {
-      return undefined;
-    }
-
-    const requestsPerMinute = Reflect.get(parsedValue, "requestsPerMinute");
-    const concurrentDownloads = Reflect.get(parsedValue, "concurrentDownloads");
-
-    if (typeof requestsPerMinute !== "number" || typeof concurrentDownloads !== "number") {
-      return undefined;
-    }
-
-    return {
-      requestsPerMinute,
-      concurrentDownloads,
-    };
-  } catch {
-    return undefined;
-  }
+  return {
+    requestsPerMinute: settings.requestsPerMinute,
+    concurrentDownloads: settings.concurrentDownloads,
+  };
 }
 
 export function Workflow() {
+  const { t } = useI18n();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<UploadableFile | null>(null);
   const [hasDownloadableData, setHasDownloadableData] = useState(false);
@@ -91,9 +68,7 @@ export function Workflow() {
     totalFiles: 0,
     downloadedFiles: 0,
   });
-  const [statusMessage, setStatusMessage] = useState<string>(
-    "Upload a Snapchat export (.zip or .json) to begin.",
-  );
+  const [statusMessage, setStatusMessage] = useState<string>(() => t("downloader.workflow.status.idle"));
   const [noticeTone, setNoticeTone] = useState<NoticeTone>("neutral");
   const [validationState, setValidationState] = useState<ValidationState>("idle");
   const [validationMessage, setValidationMessage] = useState<string>("");
@@ -103,6 +78,78 @@ export function Workflow() {
   const setNotice = (message: string, tone: NoticeTone = "neutral") => {
     setStatusMessage(message);
     setNoticeTone(tone);
+  };
+
+  const resolveUploadErrorMessage = (error: unknown): string => {
+    if (error instanceof Error) {
+      if (error.message === "ZIP_PATH_REQUIRED") {
+        return t("downloader.workflow.error.zipPathRequired");
+      }
+      if (error.message === "INVALID_ZIP") {
+        return t("downloader.workflow.error.invalidZip");
+      }
+      if (error.message === "INVALID_JSON") {
+        return t("downloader.workflow.error.invalidJson");
+      }
+    }
+
+    return t("downloader.workflow.error.generic");
+  };
+
+  const translateDownloadStatus = (status: string): string => {
+    if (status === "idle") {
+      return t("downloader.workflow.status.downloadStatus.idle");
+    }
+
+    if (status === "running") {
+      return t("downloader.workflow.status.downloadStatus.running");
+    }
+
+    if (status === "success") {
+      return t("downloader.workflow.status.downloadStatus.success");
+    }
+
+    if (status === "error") {
+      return t("downloader.workflow.status.downloadStatus.error");
+    }
+
+    return status;
+  };
+
+  const translateDownloadErrorCode = (errorCode: DownloadErrorCode | null): string => {
+    if (!errorCode) {
+      return t("downloader.workflow.error.generic");
+    }
+
+    if (errorCode === "EXPIRED_LINK") {
+      return t("downloader.workflow.error.download.EXPIRED_LINK");
+    }
+
+    if (errorCode === "HTTP_ERROR") {
+      return t("downloader.workflow.error.download.HTTP_ERROR");
+    }
+
+    if (errorCode === "IO_ERROR") {
+      return t("downloader.workflow.error.download.IO_ERROR");
+    }
+
+    if (errorCode === "CONCURRENCY_ERROR") {
+      return t("downloader.workflow.error.download.CONCURRENCY_ERROR");
+    }
+
+    return t("downloader.workflow.error.download.INTERNAL_ERROR");
+  };
+
+  const translateProcessErrorCode = (errorCode: ProcessErrorCode | null): string => {
+    if (!errorCode) {
+      return t("downloader.workflow.error.generic");
+    }
+
+    if (errorCode === "MISSING_DOWNLOADED_FILE") {
+      return t("downloader.workflow.error.process.MISSING_DOWNLOADED_FILE");
+    }
+
+    return t("downloader.workflow.error.process.PROCESSING_FAILED");
   };
 
   useEffect(() => {
@@ -115,12 +162,12 @@ export function Workflow() {
         setJobState(currentJobState);
         setWorkflowStage(inferWorkflowStage(currentJobState));
         setHasDownloadableData(queuedCount > 0);
-      } catch (error) {
-        setNotice(`Could not load job state: ${normalizeError(error)}`, "error");
+      } catch {
+        setNotice(t("downloader.workflow.status.loadingJobState"), "error");
       }
     };
     void loadJobState();
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     let unlistenDownload: (() => void) | null = null;
@@ -134,6 +181,7 @@ export function Workflow() {
           successfulFiles: payload.successfulFiles,
           failedFiles: payload.failedFiles,
           status: payload.status,
+          errorCode: payload.errorCode,
         });
 
         setJobState((previousState) => ({
@@ -142,6 +190,10 @@ export function Workflow() {
           downloadedFiles: payload.successfulFiles,
           status: payload.status,
         }));
+
+        if (payload.status === "error") {
+          setNotice(translateDownloadErrorCode(payload.errorCode), "error");
+        }
       });
 
       unlistenProcess = await onProcessProgress((payload: ProcessProgressPayload) => {
@@ -151,7 +203,12 @@ export function Workflow() {
           successfulFiles: payload.successfulFiles,
           failedFiles: payload.failedFiles,
           status: payload.status,
+          errorCode: payload.errorCode,
         });
+
+        if (payload.status === "error") {
+          setNotice(translateProcessErrorCode(payload.errorCode), "error");
+        }
       });
     };
 
@@ -165,7 +222,7 @@ export function Workflow() {
         unlistenProcess();
       }
     };
-  }, []);
+  }, [t]);
 
   const progressValue = useMemo(() => {
     if (workflowStage === "process") {
@@ -198,9 +255,10 @@ export function Workflow() {
     const isZip = fileName.endsWith(".zip");
 
     if (!isJson && !isZip) {
+      const message = t("downloader.workflow.status.unsupportedFile");
       setValidationState("invalid");
-      setValidationMessage("Unsupported file type. Please choose a .zip or .json file.");
-      setNotice("Unsupported file type. Please choose a .zip or .json file.", "error");
+      setValidationMessage(message);
+      setNotice(message, "error");
       setHasDownloadableData(false);
       return;
     }
@@ -208,31 +266,31 @@ export function Workflow() {
     try {
       setImportState("validating");
       setValidationState("validating");
-      setValidationMessage(`Validating ${fileToUpload.name}...`);
-      setNotice(`Validating ${fileToUpload.name}...`);
+      setValidationMessage(t("downloader.workflow.status.validating", { fileName: fileToUpload.name }));
+      setNotice(t("downloader.workflow.status.validating", { fileName: fileToUpload.name }));
 
       let jsonContent: string | null = null;
 
       if (isZip) {
         if (!fileToUpload.path || fileToUpload.path.trim().length === 0) {
-          throw new Error("ZIP validation requires a local file path from the Tauri file picker.");
+          throw new Error("ZIP_PATH_REQUIRED");
         }
 
         const isValid = await validateMemoryFile(fileToUpload.path);
         if (!isValid) {
-          throw new Error("ZIP is invalid or does not include memories_history.json.");
+          throw new Error("INVALID_ZIP");
         }
       } else {
         jsonContent = await fileToUpload.text();
         const isValid = await validateMemoryJsonContent(jsonContent);
         if (!isValid) {
-          throw new Error("JSON is invalid or does not match Snapchat memories schema.");
+          throw new Error("INVALID_JSON");
         }
       }
 
       setValidationState("valid");
-      setValidationMessage(`${fileToUpload.name} is valid.`);
-      setNotice(`${fileToUpload.name} is valid. Importing...`, "success");
+      setValidationMessage(t("downloader.workflow.status.valid", { fileName: fileToUpload.name }));
+      setNotice(t("downloader.workflow.status.importing", { fileName: fileToUpload.name }), "success");
       setHasDownloadableData(true);
 
       setImportState("importing");
@@ -240,7 +298,10 @@ export function Workflow() {
       const summary = await importMemoriesJson(importedJsonContent);
 
       setNotice(
-        `Imported ${summary.importedCount} items. Skipped ${summary.skippedDuplicates} duplicates.`,
+        t("downloader.workflow.status.imported", {
+          importedCount: summary.importedCount,
+          skippedDuplicates: summary.skippedDuplicates,
+        }),
         "success",
       );
       console.log(`Import result: ${summary.importedCount} imported, ${summary.skippedDuplicates} duplicates skipped, ${summary.parsedCount} total parsed.`);
@@ -263,9 +324,10 @@ export function Workflow() {
       }
     } catch (error) {
       console.error("Upload failed:", error);
+      const message = resolveUploadErrorMessage(error);
       setValidationState("invalid");
-      setValidationMessage(normalizeError(error));
-      setNotice(normalizeError(error), "error");
+      setValidationMessage(message);
+      setNotice(message, "error");
       setHasDownloadableData(false);
     } finally {
       setImportState("idle");
@@ -280,7 +342,7 @@ export function Workflow() {
     setValidationMessage("");
 
     if (!uploadableFile) {
-      setNotice("No file selected.");
+      setNotice(t("downloader.workflow.status.noFileSelected"));
       return;
     }
 
@@ -291,7 +353,7 @@ export function Workflow() {
     setSelectedFile(null);
     setValidationState("idle");
     setValidationMessage("");
-    setNotice("Upload a Snapchat export (.zip or .json) to begin.");
+    setNotice(t("downloader.workflow.status.idle"));
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -299,38 +361,41 @@ export function Workflow() {
 
   const onStartDownload = async () => {
     try {
-      setNotice("Downloading queued media...");
+      setNotice(t("downloader.workflow.status.downloading"));
       setDownloadProgress(null);
       const downloadedCount = await downloadQueuedMemories(".raw_cache", loadRateLimitSettings());
       const currentJobState = await getJobState();
       setJobState(currentJobState);
       setWorkflowStage(inferWorkflowStage(currentJobState));
-      setNotice(`Downloaded ${downloadedCount} files.`, "success");
-    } catch (error) {
-      setNotice(normalizeError(error), "error");
+      setNotice(t("downloader.workflow.status.downloaded", { count: downloadedCount }), "success");
+    } catch {
+      setNotice(t("downloader.workflow.error.generic"), "error");
     }
   };
 
   const onProcessFiles = async () => {
     try {
-      setNotice("Processing downloaded files...");
+      setNotice(t("downloader.workflow.status.processing"));
       setProcessProgress(null);
       const result = await processDownloadedMemories(".raw_cache", true);
       setNotice(
-        `Processed ${result.processedCount} files. Failed ${result.failedCount} files.`,
+        t("downloader.workflow.status.processed", {
+          processedCount: result.processedCount,
+          failedCount: result.failedCount,
+        }),
         result.failedCount > 0 ? "error" : "success",
       );
-    } catch (error) {
-      setNotice(normalizeError(error), "error");
+    } catch {
+      setNotice(t("downloader.workflow.error.generic"), "error");
     }
   };
 
   return (
     <div className="space-y-4">
       <div className="space-y-2 rounded-md border border-border p-3">
-        <p className="text-sm font-medium">Upload Snapchat Export</p>
+        <p className="text-sm font-medium">{t("downloader.workflow.upload.title")}</p>
         <p className="text-xs text-muted-foreground">
-          Upload a .zip file (must contain memories_history.json) or a .json file.
+          {t("downloader.workflow.upload.description")}
         </p>
         <input
           ref={fileInputRef}
@@ -348,13 +413,13 @@ export function Workflow() {
               onClick={() => fileInputRef.current?.click()}
               disabled={isWorking}
             >
-              Upload
+              {t("downloader.workflow.button.upload")}
             </Button>
           ) : (
             <>
               <span className="flex-1 truncate text-sm">{selectedFile.name}</span>
               <Button type="button" variant="outline" onClick={onRemoveFile} disabled={isWorking}>
-                Remove
+                {t("downloader.workflow.button.remove")}
               </Button>
             </>
           )}
@@ -376,19 +441,27 @@ export function Workflow() {
 
       <div className="space-y-2">
         <p className="text-sm text-muted-foreground">
-          {workflowStage === "download" ? "Download progress" : "Processing progress"}
+          {workflowStage === "download"
+            ? t("downloader.workflow.progress.download")
+            : t("downloader.workflow.progress.processing")}
         </p>
         <Progress value={progressValue} className="h-2" />
         {workflowStage === "download" ? (
           <p className="text-xs text-muted-foreground">
-            {(downloadProgress?.successfulFiles ?? jobState.downloadedFiles)}/
-            {(downloadProgress?.totalFiles ?? jobState.totalFiles)} files downloaded (
-            {downloadProgress?.status ?? jobState.status})
+            {t("downloader.workflow.progress.downloadDetails", {
+              successful: downloadProgress?.successfulFiles ?? jobState.downloadedFiles,
+              total: downloadProgress?.totalFiles ?? jobState.totalFiles,
+              status: translateDownloadStatus(downloadProgress?.status ?? jobState.status),
+            })}
           </p>
         ) : (
           <p className="text-xs text-muted-foreground">
-            {(processProgress?.completedFiles ?? 0)}/{(processProgress?.totalFiles ?? 0)} files
-            processed (ok: {processProgress?.successfulFiles ?? 0}, failed: {processProgress?.failedFiles ?? 0})
+            {t("downloader.workflow.progress.processDetails", {
+              completed: processProgress?.completedFiles ?? 0,
+              total: processProgress?.totalFiles ?? 0,
+              successful: processProgress?.successfulFiles ?? 0,
+              failed: processProgress?.failedFiles ?? 0,
+            })}
           </p>
         )}
       </div>
@@ -400,11 +473,11 @@ export function Workflow() {
             onClick={onStartDownload}
             disabled={!hasDownloadableData && validationState !== "valid"}
           >
-            Start Download
+            {t("downloader.workflow.button.startDownload")}
           </Button>
         ) : (
           <Button type="button" variant="outline" onClick={onProcessFiles}>
-            Process Files
+            {t("downloader.workflow.button.processFiles")}
           </Button>
         )}
       </div>
