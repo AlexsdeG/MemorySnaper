@@ -21,9 +21,14 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": [
-          "$APPDATA/**"
-        ]
+        "scope": {
+          "allow": [
+            "$APPDATA/**",
+            "$APPDATA/.raw_cache/**",
+            "$APPDATA/.raw_cache/.thumbnails/**"
+          ],
+          "requireLiteralLeadingDot": false
+        }
       }
     }
   },
