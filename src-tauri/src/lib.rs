@@ -1148,6 +1148,11 @@ async fn get_processing_session_overview(
     .await
     .map_err(|error| format!("failed to read duplicate files count: {error}"))?;
 
+    let imported_files = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM MemoryItem")
+        .fetch_one(&pool)
+        .await
+        .map_err(|error| format!("failed to read imported files count: {error}"))?;
+
     let (active_zip, finished_zip_files) = if let Some(job_id) = latest_job_id.as_deref() {
         let active_zip = sqlx::query_scalar::<_, String>(
             "SELECT filename FROM ProcessedZips WHERE job_id = ?1 AND status = 'processing' ORDER BY filename ASC LIMIT 1",
@@ -1174,13 +1179,24 @@ async fn get_processing_session_overview(
     pool.close().await;
 
     let (export_status, total_files, downloaded_files) = if let Some(row) = job_row {
+        let row_total_files = row.get::<i64, _>("total_files");
+        let row_downloaded_files = row.get::<i64, _>("downloaded_files");
+
         (
             row.get::<String, _>("status"),
-            row.get::<i64, _>("total_files"),
-            row.get::<i64, _>("downloaded_files"),
+            if row_total_files > 0 {
+                row_total_files
+            } else {
+                imported_files
+            },
+            if row_downloaded_files > 0 {
+                row_downloaded_files
+            } else {
+                processed_files
+            },
         )
     } else {
-        ("idle".to_string(), 0, 0)
+        ("idle".to_string(), imported_files, processed_files)
     };
 
     Ok(ProcessingSessionOverview {
@@ -1328,6 +1344,11 @@ async fn reset_all_app_data(app: tauri::AppHandle) -> Result<(), String> {
         .await
         .map_err(|error| format!("failed to clear MediaChunks table: {error}"))?;
 
+    sqlx::query("DELETE FROM ProcessedZips")
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| format!("failed to clear ProcessedZips table: {error}"))?;
+
     sqlx::query("DELETE FROM Memories")
         .execute(&mut *transaction)
         .await
@@ -1343,8 +1364,13 @@ async fn reset_all_app_data(app: tauri::AppHandle) -> Result<(), String> {
         .await
         .map_err(|error| format!("failed to clear ExportJob table: {error}"))?;
 
+    sqlx::query("DELETE FROM ExportJobs")
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| format!("failed to clear ExportJobs table: {error}"))?;
+
     sqlx::query(
-        "DELETE FROM sqlite_sequence WHERE name IN ('MediaChunks', 'Memories', 'MemoryItem', 'ExportJob')",
+        "DELETE FROM sqlite_sequence WHERE name IN ('MediaChunks', 'ProcessedZips', 'Memories', 'MemoryItem', 'ExportJob', 'ExportJobs')",
     )
     .execute(&mut *transaction)
     .await

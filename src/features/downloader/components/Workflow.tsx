@@ -3,7 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { readAppSettings } from "@/lib/app-settings";
+import { DOWNLOADER_SESSION_STORAGE_KEY, readAppSettings } from "@/lib/app-settings";
 import { useI18n } from "@/lib/i18n";
 import {
   finalizeZipSession,
@@ -45,8 +45,6 @@ function loadRateLimitSettings(): DownloadRateLimitSettings | undefined {
     concurrentDownloads: settings.concurrentDownloads,
   };
 }
-
-const DOWNLOADER_SESSION_STORAGE_KEY = "memorysnaper.downloader-session.v1";
 
 export function Workflow() {
   const { t } = useI18n();

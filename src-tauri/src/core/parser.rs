@@ -332,7 +332,13 @@ pub async fn import_memories_history_json(
 
         let parsed_date = normalize_date_component(&item.date);
         let mid = extract_mid_from_download_link(&item.media_url);
-        let memory_hash = build_memory_hash(&parsed_date, &item.media_type);
+        let memory_hash = build_memory_hash(
+            &parsed_date,
+            &item.media_type,
+            mid.as_deref(),
+            &item.media_url,
+            item.overlay_url.as_deref(),
+        );
 
         sqlx::query(
             "
@@ -584,11 +590,27 @@ fn infer_media_type(media_url: &str) -> &'static str {
     }
 }
 
-fn build_memory_hash(date: &str, media_type: &str) -> String {
+fn build_memory_hash(
+    date: &str,
+    media_type: &str,
+    mid: Option<&str>,
+    media_url: &str,
+    overlay_url: Option<&str>,
+) -> String {
     let mut hasher = Sha256::new();
     hasher.update(date.as_bytes());
     hasher.update(b"|");
     hasher.update(media_type.as_bytes());
+    hasher.update(b"|");
+    if let Some(mid) = mid.filter(|value| !value.trim().is_empty()) {
+        hasher.update(mid.as_bytes());
+    }
+    hasher.update(b"|");
+    hasher.update(media_url.as_bytes());
+    hasher.update(b"|");
+    if let Some(overlay_url) = overlay_url.filter(|value| !value.trim().is_empty()) {
+        hasher.update(overlay_url.as_bytes());
+    }
     format!("{:x}", hasher.finalize())
 }
 

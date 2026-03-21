@@ -2,6 +2,7 @@ import { parseLanguagePreference, type LanguagePreference } from "@/lib/language
 
 export const SETTINGS_STORAGE_KEY = "memorysnaper.rate-limit-settings";
 export const THEME_STORAGE_KEY = "memorysnaper-theme";
+export const DOWNLOADER_SESSION_STORAGE_KEY = "memorysnaper.downloader-session.v1";
 
 export type ThemePreference = "light" | "dark" | "system";
 
@@ -106,4 +107,5 @@ export function clearPersistedAppClientState(): void {
 
   window.localStorage.removeItem(SETTINGS_STORAGE_KEY);
   window.localStorage.removeItem(THEME_STORAGE_KEY);
+  window.localStorage.removeItem(DOWNLOADER_SESSION_STORAGE_KEY);
 }
