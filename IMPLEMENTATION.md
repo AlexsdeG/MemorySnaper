@@ -65,10 +65,15 @@ Here is the comprehensive, strictly formatted `IMPLEMENTATION.md` blueprint to h
 - [ ] **Verification:** Trigger the processing loop. Call the "Pause" Tauri command from the React frontend. Verify console logs show the loop pausing without crashing.
 
 ### Phase 6: Frontend Progress & Viewer UI
-- [ ] **Step 6.1:** In `src/features/downloader/components/Workflow.tsx`, add UI to select 1 JSON and multiple ZIPs. 
-- [ ] **Step 6.2:** Create a Live Console component that listens to Tauri events. Display strings like `[2026-02-20] Extracting mid 9a5a... from ZIP 3`.
-- [ ] **Step 6.3:** Show global progress: `Files Processed: X / Y`, `Duplicates Skipped: Z`, `Active ZIP: part_3.zip`. Add Pause and Stop buttons bound to the Tauri state commands.
-- [ ] **Verification:** Start a mock process. Verify the UI updates in real-time with the current date, file counts, and the pause button halts UI progress.
+- [x] **Step 6.1:** In `src/features/downloader/components/Workflow.tsx`, update UI to accept Snapchat ZIP exports only (`mydata~<uuid>` main + optional numbered parts).
+- [x] **Step 6.2:** Create a Live Console component that listens to Tauri events. Display structured status strings during download/processing.
+- [x] **Step 6.3:** Show global progress: `Files Processed: X / Y`, `Duplicates Skipped: Z`, `Active ZIP: <name>`. Add Pause and Stop buttons bound to Tauri state commands.
+- [ ] **Verification:**
+  - Select Snapchat ZIP files only; confirm the main ZIP (`mydata~<uuid>`) must contain `json/memories_history.json` and `memories/`.
+  - Start a mock session and verify live console logs update with timestamps/status, and that ZIP completion rows appear.
+  - Verify `Files Processed`, `Duplicates Skipped`, and `Active ZIP` update during runtime.
+  - Click Pause and confirm progress stops advancing until Resume.
+  - Close and reopen app, click `Reload Session State`, and confirm current session state and finished ZIP statuses are restored.
 
 ## 3. Global Testing Strategy
 1. **The Missing File Fallback Test:** Provide a JSON with a `mid`, but DO NOT put the file in the provided ZIPs. Verify the app recognizes it is missing, falls back to the HTTP `reqwest` download, successfully stages it, processes it, and marks it `PROCESSED`.

@@ -61,10 +61,36 @@ export type DownloadRateLimitSettings = {
   concurrentDownloads: number;
 };
 
+export type ZipSessionInitResult = {
+  jobId: string;
+  activeZip: string | null;
+};
+
+export type ProcessingSessionOverview = {
+  jobId: string | null;
+  exportStatus: string;
+  totalFiles: number;
+  downloadedFiles: number;
+  processedFiles: number;
+  duplicatesSkipped: number;
+  isPaused: boolean;
+  isStopped: boolean;
+  activeZip: string | null;
+  finishedZipFiles: string[];
+};
+
+export type SessionLogPayload = {
+  message: string;
+};
+
 export async function importMemoriesJson(
   jsonContent: string,
 ): Promise<ImportMemoriesResult> {
   return invoke<ImportMemoriesResult>("import_memories_json", { jsonContent });
+}
+
+export async function importMemoriesFromZip(zipPath: string): Promise<ImportMemoriesResult> {
+  return invoke<ImportMemoriesResult>("import_memories_from_zip", { zipPath });
 }
 
 export async function getSystemLocale(): Promise<string | null> {
@@ -77,6 +103,34 @@ export async function validateMemoryFile(path: string): Promise<boolean> {
 
 export async function validateMemoryJsonContent(jsonContent: string): Promise<boolean> {
   return invoke<boolean>("validate_memory_json_content", { jsonContent });
+}
+
+export async function validateBaseZipArchive(path: string): Promise<boolean> {
+  return invoke<boolean>("validate_base_zip_archive", { path });
+}
+
+export async function initializeZipSession(zipPaths: string[]): Promise<ZipSessionInitResult> {
+  return invoke<ZipSessionInitResult>("initialize_zip_session", { zipPaths });
+}
+
+export async function finalizeZipSession(jobId?: string): Promise<void> {
+  return invoke<void>("finalize_zip_session", { jobId });
+}
+
+export async function setProcessingPaused(paused: boolean): Promise<void> {
+  return invoke<void>("set_processing_paused", { paused });
+}
+
+export async function stopProcessingSession(): Promise<void> {
+  return invoke<void>("stop_processing_session");
+}
+
+export async function resumeProcessingSession(): Promise<void> {
+  return invoke<void>("resume_processing_session");
+}
+
+export async function getProcessingSessionOverview(): Promise<ProcessingSessionOverview> {
+  return invoke<ProcessingSessionOverview>("get_processing_session_overview");
 }
 
 export async function downloadQueuedMemories(
@@ -119,6 +173,18 @@ export async function processDownloadedMemories(
   });
 }
 
+export async function processMemoriesFromZipArchives(
+  zipPaths: string[],
+  outputDir: string,
+  keepOriginals: boolean,
+): Promise<ProcessMemoriesResult> {
+  return invoke<ProcessMemoriesResult>("process_memories_from_zip_archives", {
+    zipPaths,
+    outputDir,
+    keepOriginals,
+  });
+}
+
 export async function getThumbnails(
   offset: number,
   limit: number,
@@ -142,6 +208,14 @@ export async function onProcessProgress(
   callback: (payload: ProcessProgressPayload) => void,
 ): Promise<UnlistenFn> {
   return listen<ProcessProgressPayload>("process-progress", (event) => {
+    callback(event.payload);
+  });
+}
+
+export async function onSessionLog(
+  callback: (payload: SessionLogPayload) => void,
+): Promise<UnlistenFn> {
+  return listen<SessionLogPayload>("session-log", (event) => {
     callback(event.payload);
   });
 }

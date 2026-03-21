@@ -8,6 +8,7 @@ use tauri::{Emitter, Manager};
 
 const MAX_PERSISTED_RETRY_ATTEMPTS: i64 = 3;
 const PROCESS_PROGRESS_EVENT: &str = "process-progress";
+const SESSION_LOG_EVENT: &str = "session-log";
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -15,6 +16,34 @@ struct ExportJobState {
     status: String,
     total_files: i64,
     downloaded_files: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionLogPayload {
+    message: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ZipSessionInitResult {
+    job_id: String,
+    active_zip: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessingSessionOverview {
+    job_id: Option<String>,
+    export_status: String,
+    total_files: i64,
+    downloaded_files: i64,
+    processed_files: i64,
+    duplicates_skipped: i64,
+    is_paused: bool,
+    is_stopped: bool,
+    active_zip: Option<String>,
+    finished_zip_files: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -68,6 +97,140 @@ struct ThumbnailItem {
     thumbnail_path: String,
 }
 
+fn emit_session_log(window: &tauri::Window, message: impl Into<String>) -> Result<(), String> {
+    window
+        .emit(
+            SESSION_LOG_EVENT,
+            SessionLogPayload {
+                message: message.into(),
+            },
+        )
+        .map_err(|error| format!("failed to emit session log event: {error}"))
+}
+
+fn parse_snapchat_zip_name(file_stem: &str) -> Result<(String, Option<u32>), String> {
+    let prefix = "mydata~";
+    if !file_stem.starts_with(prefix) {
+        return Err(format!(
+            "zip '{file_stem}' must start with '{prefix}'"
+        ));
+    }
+
+    let rest = &file_stem[prefix.len()..];
+    if rest.is_empty() {
+        return Err(format!("zip '{file_stem}' is missing uuid segment"));
+    }
+
+    let (uuid_part, part_number) = if let Some((uuid_candidate, number_candidate)) = rest.rsplit_once(' ') {
+        if number_candidate.chars().all(|character| character.is_ascii_digit()) {
+            let parsed_number = number_candidate
+                .parse::<u32>()
+                .map_err(|error| format!("invalid zip part number in '{file_stem}': {error}"))?;
+            (uuid_candidate, Some(parsed_number))
+        } else {
+            (rest, None)
+        }
+    } else {
+        (rest, None)
+    };
+
+    let is_uuid_like = !uuid_part.is_empty()
+        && uuid_part
+            .chars()
+            .all(|character| character.is_ascii_hexdigit() || character == '-');
+
+    if !is_uuid_like {
+        return Err(format!(
+            "zip '{file_stem}' has invalid uuid segment '{uuid_part}'"
+        ));
+    }
+
+    Ok((uuid_part.to_string(), part_number))
+}
+
+fn zip_contains_required_memories_entry(zip_path: &std::path::Path) -> Result<bool, String> {
+    let file = std::fs::File::open(zip_path).map_err(|error| {
+        format!(
+            "failed to open zip '{}' for base verification: {error}",
+            zip_path.display()
+        )
+    })?;
+
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|error| format!("failed to read zip archive '{}': {error}", zip_path.display()))?;
+
+    for index in 0..archive.len() {
+        let entry = archive
+            .by_index(index)
+            .map_err(|error| format!("failed to inspect zip entry {}: {error}", index))?;
+
+        let normalized_name = entry.name().replace('\\', "/").to_ascii_lowercase();
+        if normalized_name == "json/memories_history.json"
+            || normalized_name.ends_with("/json/memories_history.json")
+        {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn zip_contains_memories_folder(zip_path: &std::path::Path) -> Result<bool, String> {
+    let file = std::fs::File::open(zip_path).map_err(|error| {
+        format!(
+            "failed to open zip '{}' for memories folder verification: {error}",
+            zip_path.display()
+        )
+    })?;
+
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|error| format!("failed to read zip archive '{}': {error}", zip_path.display()))?;
+
+    for index in 0..archive.len() {
+        let entry = archive
+            .by_index(index)
+            .map_err(|error| format!("failed to inspect zip entry {}: {error}", index))?;
+
+        let normalized_name = entry.name().replace('\\', "/").to_ascii_lowercase();
+        if normalized_name == "memories"
+            || normalized_name.starts_with("memories/")
+            || normalized_name.contains("/memories/")
+            || normalized_name.ends_with("/memories")
+        {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn ensure_first_zip_is_base_archive(zip_path: &std::path::Path) -> Result<(), String> {
+    let stem = zip_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+
+    let (_, part_number) = parse_snapchat_zip_name(stem)?;
+
+    if part_number.is_some() {
+        return Err(format!(
+            "first zip '{}' must be the base archive without trailing part numbers",
+            zip_path.display()
+        ));
+    }
+
+    Ok(())
+}
+
+async fn latest_export_job_id(pool: &sqlx::SqlitePool) -> Result<Option<String>, String> {
+    sqlx::query_scalar::<_, String>(
+        "SELECT id FROM ExportJobs ORDER BY datetime(created_at) DESC, id DESC LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| format!("failed to read latest export job id: {error}"))
+}
+
 fn memories_db_url(app: &tauri::AppHandle) -> Result<String, String> {
     let mut app_data_dir = app
         .path()
@@ -98,6 +261,45 @@ fn resolve_output_dir(app: &tauri::AppHandle, output_dir: &str) -> Result<std::p
 
     app_data_dir.push(requested_path);
     Ok(app_data_dir)
+}
+
+async fn sqlite_column_exists(
+    pool: &sqlx::SqlitePool,
+    table_name: &str,
+    column_name: &str,
+) -> Result<bool, String> {
+    let pragma_sql = format!("PRAGMA table_info({table_name})");
+    let rows = sqlx::query(&pragma_sql)
+        .fetch_all(pool)
+        .await
+        .map_err(|error| format!("failed to inspect table {table_name}: {error}"))?;
+
+    Ok(rows
+        .iter()
+        .any(|row| row.get::<String, _>("name") == column_name))
+}
+
+async fn ensure_sqlite_column(
+    pool: &sqlx::SqlitePool,
+    table_name: &str,
+    column_name: &str,
+    column_definition: &str,
+) -> Result<(), String> {
+    if sqlite_column_exists(pool, table_name, column_name).await? {
+        return Ok(());
+    }
+
+    let alter_sql = format!("ALTER TABLE {table_name} ADD COLUMN {column_definition}");
+    sqlx::query(&alter_sql)
+        .execute(pool)
+        .await
+        .map_err(|error| {
+            format!(
+                "failed to add column {column_name} to table {table_name}: {error}"
+            )
+        })?;
+
+    Ok(())
 }
 
     async fn setup_database(app: &tauri::AppHandle) -> Result<(), String> {
@@ -160,6 +362,19 @@ fn resolve_output_dir(app: &tauri::AppHandle, output_dir: &str) -> Result<std::p
         .await
         .map_err(|error| format!("failed to create Memories table: {error}"))?;
 
+        ensure_sqlite_column(&pool, "Memories", "job_id", "job_id TEXT").await?;
+        ensure_sqlite_column(&pool, "Memories", "mid", "mid TEXT").await?;
+        ensure_sqlite_column(&pool, "Memories", "content_hash", "content_hash TEXT").await?;
+        ensure_sqlite_column(&pool, "Memories", "relative_path", "relative_path TEXT").await?;
+        ensure_sqlite_column(&pool, "Memories", "thumbnail_path", "thumbnail_path TEXT").await?;
+
+        sqlx::query(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_content_hash ON Memories(content_hash)",
+        )
+        .execute(&pool)
+        .await
+        .map_err(|error| format!("failed to create Memories content hash index: {error}"))?;
+
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS MediaChunks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -173,6 +388,29 @@ fn resolve_output_dir(app: &tauri::AppHandle, output_dir: &str) -> Result<std::p
         .execute(&pool)
         .await
         .map_err(|error| format!("failed to create MediaChunks table: {error}"))?;
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS ExportJobs (
+                id TEXT PRIMARY KEY,
+                created_at DATETIME,
+                status TEXT
+            )",
+        )
+        .execute(&pool)
+        .await
+        .map_err(|error| format!("failed to create ExportJobs table: {error}"))?;
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS ProcessedZips (
+                job_id TEXT,
+                filename TEXT,
+                status TEXT,
+                PRIMARY KEY (job_id, filename)
+            )",
+        )
+        .execute(&pool)
+        .await
+        .map_err(|error| format!("failed to create ProcessedZips table: {error}"))?;
 
         pool.close().await;
         Ok(())
@@ -283,6 +521,15 @@ async fn download_queued_memories(
         requests_per_minute,
         concurrent_downloads
     );
+
+    emit_session_log(
+        &window,
+        format!(
+            "[{}] Download session started (output: {})",
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+            resolved_output_dir.display()
+        ),
+    )?;
 
     let database_url = memories_db_url(&app)?;
     let pool = sqlx::SqlitePool::connect(&database_url)
@@ -585,6 +832,18 @@ async fn download_queued_memories(
         final_status
     );
 
+    emit_session_log(
+        &window,
+        format!(
+            "[{}] Download phase finished: {} success, {} retryable, {} expired, {} failed",
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+            successful_downloads,
+            remaining_retryable,
+            remaining_expired,
+            remaining_failed
+        ),
+    )?;
+
     pool.close().await;
     Ok(successful_downloads)
 }
@@ -638,6 +897,304 @@ async fn validate_memory_json_content(json_content: String) -> Result<bool, Stri
     core::parser::validate_memories_history_json_content(&json_content)
         .map(|_| true)
         .map_err(|error| format!("failed to validate memories json content: {error}"))
+}
+
+#[tauri::command]
+async fn validate_base_zip_archive(path: String) -> Result<bool, String> {
+    let zip_path = std::path::PathBuf::from(path);
+    ensure_first_zip_is_base_archive(&zip_path)?;
+
+    let has_json = zip_contains_required_memories_entry(&zip_path)?;
+    let has_memories_folder = zip_contains_memories_folder(&zip_path)?;
+
+    Ok(has_json && has_memories_folder)
+}
+
+#[tauri::command]
+async fn import_memories_from_zip(
+    app: tauri::AppHandle,
+    zip_path: String,
+) -> Result<ImportMemoriesResult, String> {
+    let database_url = memories_db_url(&app)?;
+    let zip_path = std::path::PathBuf::from(zip_path);
+
+    let json_content = core::parser::load_memories_history_json(&zip_path)
+        .await
+        .map_err(|error| format!("failed to read memories_history.json from zip: {error}"))?;
+
+    let summary = core::parser::import_memories_history_json(&database_url, &json_content)
+        .await
+        .map_err(|error| format!("failed to import memories from zip: {error}"))?;
+
+    Ok(ImportMemoriesResult {
+        parsed_count: summary.parsed_count,
+        imported_count: summary.imported_count,
+        skipped_duplicates: summary.skipped_duplicates,
+    })
+}
+
+#[tauri::command]
+async fn initialize_zip_session(
+    app: tauri::AppHandle,
+    zip_paths: Vec<String>,
+) -> Result<ZipSessionInitResult, String> {
+    if zip_paths.is_empty() {
+        return Err("at least one zip path is required".to_string());
+    }
+
+    let parsed_zip_paths: Vec<std::path::PathBuf> = zip_paths
+        .iter()
+        .map(std::path::PathBuf::from)
+        .collect();
+
+    let mut main_zip: Option<(std::path::PathBuf, String)> = None;
+    let mut optional_part_zips = Vec::<(std::path::PathBuf, String, u32)>::new();
+
+    for zip_path in &parsed_zip_paths {
+        let stem = zip_path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .ok_or_else(|| format!("zip '{}' has an invalid file name", zip_path.display()))?;
+
+        let (uuid, part_number) = parse_snapchat_zip_name(stem)?;
+
+        if !zip_contains_memories_folder(zip_path)? {
+            return Err(format!(
+                "zip '{}' must contain a memories/ folder",
+                zip_path.display()
+            ));
+        }
+
+        match part_number {
+            None => {
+                if main_zip.is_some() {
+                    return Err("multiple main zip files detected; provide exactly one mydata~<uuid>.zip".to_string());
+                }
+                main_zip = Some((zip_path.clone(), uuid));
+            }
+            Some(part_number) => {
+                optional_part_zips.push((zip_path.clone(), uuid, part_number));
+            }
+        }
+    }
+
+    let (main_zip_path, main_uuid) = main_zip
+        .ok_or_else(|| "missing main zip file; provide mydata~<uuid>.zip as the base archive".to_string())?;
+
+    if !zip_contains_required_memories_entry(&main_zip_path)? {
+        return Err(format!(
+            "first zip '{}' must contain json/memories_history.json",
+            main_zip_path.display()
+        ));
+    }
+
+    for (_, uuid, _) in &optional_part_zips {
+        if uuid != &main_uuid {
+            return Err("all optional zip parts must belong to the same mydata~<uuid> set as the main zip".to_string());
+        }
+    }
+
+    optional_part_zips.sort_by_key(|(_, _, part_number)| *part_number);
+
+    let mut ordered_zip_paths = Vec::with_capacity(parsed_zip_paths.len());
+    ordered_zip_paths.push(main_zip_path.clone());
+    for (zip_path, _, _) in &optional_part_zips {
+        ordered_zip_paths.push(zip_path.clone());
+    }
+
+    let database_url = memories_db_url(&app)?;
+    let pool = sqlx::SqlitePool::connect(&database_url)
+        .await
+        .map_err(|error| format!("failed to connect to memories database: {error}"))?;
+
+    let job_id = format!("job-{}", chrono::Utc::now().timestamp_millis());
+
+    sqlx::query(
+        "
+        INSERT INTO ExportJobs (id, created_at, status)
+        VALUES (?1, datetime('now'), 'RUNNING')
+        ",
+    )
+    .bind(&job_id)
+    .execute(&pool)
+    .await
+    .map_err(|error| format!("failed to initialize ExportJobs row: {error}"))?;
+
+    for (index, zip_path) in ordered_zip_paths.iter().enumerate() {
+        let file_name = zip_path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default()
+            .to_string();
+
+        let status = if index == 0 { "processing" } else { "pending" };
+
+        sqlx::query(
+            "
+            INSERT INTO ProcessedZips (job_id, filename, status)
+            VALUES (?1, ?2, ?3)
+            ON CONFLICT(job_id, filename) DO UPDATE SET status = excluded.status
+            ",
+        )
+        .bind(&job_id)
+        .bind(file_name)
+        .bind(status)
+        .execute(&pool)
+        .await
+        .map_err(|error| format!("failed to initialize ProcessedZips row: {error}"))?;
+    }
+
+    pool.close().await;
+
+    Ok(ZipSessionInitResult {
+        job_id,
+        active_zip: ordered_zip_paths
+            .first()
+            .and_then(|path| path.file_name())
+            .and_then(|value| value.to_str())
+            .map(str::to_string),
+    })
+}
+
+#[tauri::command]
+async fn finalize_zip_session(app: tauri::AppHandle, job_id: Option<String>) -> Result<(), String> {
+    let database_url = memories_db_url(&app)?;
+    let pool = sqlx::SqlitePool::connect(&database_url)
+        .await
+        .map_err(|error| format!("failed to connect to memories database: {error}"))?;
+
+    let target_job_id = if let Some(job_id) = job_id {
+        Some(job_id)
+    } else {
+        latest_export_job_id(&pool).await?
+    };
+
+    if let Some(target_job_id) = target_job_id {
+        sqlx::query(
+            "
+            UPDATE ProcessedZips
+            SET status = 'finished'
+            WHERE job_id = ?1
+            ",
+        )
+        .bind(&target_job_id)
+        .execute(&pool)
+        .await
+        .map_err(|error| format!("failed to finalize ProcessedZips status: {error}"))?;
+
+        sqlx::query("UPDATE ExportJobs SET status = 'COMPLETED' WHERE id = ?1")
+            .bind(target_job_id)
+            .execute(&pool)
+            .await
+            .map_err(|error| format!("failed to finalize ExportJobs status: {error}"))?;
+    }
+
+    pool.close().await;
+    Ok(())
+}
+
+#[tauri::command]
+fn set_processing_paused(paused: bool) -> Result<(), String> {
+    core::state::set_paused(paused);
+    if paused {
+        core::state::set_stopped(false);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn stop_processing_session() -> Result<(), String> {
+    core::state::set_stopped(true);
+    core::state::set_paused(false);
+    Ok(())
+}
+
+#[tauri::command]
+fn resume_processing_session() -> Result<(), String> {
+    core::state::set_stopped(false);
+    core::state::set_paused(false);
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_processing_session_overview(
+    app: tauri::AppHandle,
+) -> Result<ProcessingSessionOverview, String> {
+    let database_url = memories_db_url(&app)?;
+    let pool = sqlx::SqlitePool::connect(&database_url)
+        .await
+        .map_err(|error| format!("failed to connect to memories database: {error}"))?;
+
+    let job_row = sqlx::query(
+        "SELECT status, total_files, downloaded_files FROM ExportJob ORDER BY id ASC LIMIT 1",
+    )
+    .fetch_optional(&pool)
+    .await
+    .map_err(|error| format!("failed to read ExportJob status: {error}"))?;
+
+    let latest_job_id = latest_export_job_id(&pool).await?;
+
+    let processed_files = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM MemoryItem WHERE status = 'processed'",
+    )
+    .fetch_one(&pool)
+    .await
+    .map_err(|error| format!("failed to read processed files count: {error}"))?;
+
+    let duplicates_skipped = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM MemoryItem WHERE status = 'duplicate'",
+    )
+    .fetch_one(&pool)
+    .await
+    .map_err(|error| format!("failed to read duplicate files count: {error}"))?;
+
+    let (active_zip, finished_zip_files) = if let Some(job_id) = latest_job_id.as_deref() {
+        let active_zip = sqlx::query_scalar::<_, String>(
+            "SELECT filename FROM ProcessedZips WHERE job_id = ?1 AND status = 'processing' ORDER BY filename ASC LIMIT 1",
+        )
+        .bind(job_id)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|error| format!("failed to read active zip status: {error}"))?;
+
+        let finished_zip_files = sqlx::query_scalar::<_, String>(
+            "SELECT filename FROM ProcessedZips WHERE job_id = ?1 AND status = 'finished' ORDER BY filename ASC",
+        )
+        .bind(job_id)
+        .fetch_all(&pool)
+        .await
+        .map_err(|error| format!("failed to read finished zip status: {error}"))?;
+
+        (active_zip, finished_zip_files)
+    } else {
+        (None, Vec::new())
+    };
+
+    let state = core::state::snapshot();
+    pool.close().await;
+
+    let (export_status, total_files, downloaded_files) = if let Some(row) = job_row {
+        (
+            row.get::<String, _>("status"),
+            row.get::<i64, _>("total_files"),
+            row.get::<i64, _>("downloaded_files"),
+        )
+    } else {
+        ("idle".to_string(), 0, 0)
+    };
+
+    Ok(ProcessingSessionOverview {
+        job_id: latest_job_id,
+        export_status,
+        total_files,
+        downloaded_files,
+        processed_files,
+        duplicates_skipped,
+        is_paused: state.is_paused,
+        is_stopped: state.is_stopped,
+        active_zip,
+        finished_zip_files,
+    })
 }
 
 #[tauri::command]
@@ -839,6 +1396,14 @@ async fn process_downloaded_memories(
         keep_originals
     );
 
+    emit_session_log(
+        &window,
+        format!(
+            "[{}] Processing phase started",
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+        ),
+    )?;
+
     let database_url = memories_db_url(&app)?;
     let pool = sqlx::SqlitePool::connect(&database_url)
         .await
@@ -936,6 +1501,18 @@ async fn process_downloaded_memories(
     );
 
     for (index, unit) in process_units.iter().enumerate() {
+        emit_session_log(
+            &window,
+            format!(
+                "[{}] Processing date {} item {} ({}/{})",
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                unit.date_taken,
+                unit.progress_item_id,
+                index + 1,
+                total_files
+            ),
+        )?;
+
         if wait_for_pause_or_stop_and_mark_pending(&pool, &process_units[index..]).await? {
             eprintln!(
                 "[processor-debug] stop requested; leaving remaining units pending (remaining={})",
@@ -1275,6 +1852,341 @@ async fn process_downloaded_memories(
         processed_count, failed_count, total_files
     );
 
+    emit_session_log(
+        &window,
+        format!(
+            "[{}] Processing phase finished: {} processed, {} failed",
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+            processed_count,
+            failed_count
+        ),
+    )?;
+
+    pool.close().await;
+    Ok(ProcessMemoriesResult {
+        processed_count,
+        failed_count,
+    })
+}
+
+#[tauri::command]
+async fn process_memories_from_zip_archives(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    zip_paths: Vec<String>,
+    output_dir: String,
+    keep_originals: bool,
+) -> Result<ProcessMemoriesResult, String> {
+    if zip_paths.is_empty() {
+        return Err("zip_paths must not be empty".to_string());
+    }
+
+    let resolved_output_dir = resolve_output_dir(&app, &output_dir)?;
+    let database_url = memories_db_url(&app)?;
+    let pool = sqlx::SqlitePool::connect(&database_url)
+        .await
+        .map_err(|error| format!("failed to connect to memories database: {error}"))?;
+
+    let zip_paths = zip_paths
+        .into_iter()
+        .map(std::path::PathBuf::from)
+        .collect::<Vec<_>>();
+
+    let rows = sqlx::query(
+        "
+        SELECT
+            m.id AS memory_group_id,
+            m.date AS memory_date,
+            m.mid AS memory_mid,
+            mi.id AS memory_item_id,
+            mi.location AS location,
+            mc.url AS media_url
+        FROM Memories m
+        JOIN MediaChunks mc
+          ON mc.memory_id = m.id
+         AND mc.order_index = 1
+        JOIN MemoryItem mi
+          ON mi.media_url = mc.url
+         AND IFNULL(mi.overlay_url, '') = IFNULL(mc.overlay_url, '')
+        WHERE m.mid IS NOT NULL
+          AND TRIM(m.mid) != ''
+          AND m.status IN ('queued', 'PENDING', 'FAILED_NETWORK')
+        ORDER BY m.id ASC
+        ",
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|error| format!("failed to load zip-process memories: {error}"))?;
+
+    let total_files = rows.len();
+    let thumbnail_path = resolved_output_dir.join(".thumbnails");
+    let mut processed_count = 0usize;
+    let mut failed_count = 0usize;
+
+    emit_session_log(
+        &window,
+        format!(
+            "[{}] ZIP-first processing started with {} archive(s)",
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+            zip_paths.len()
+        ),
+    )?;
+
+    for (index, row) in rows.iter().enumerate() {
+        let memory_group_id = row.get::<i64, _>("memory_group_id");
+        let memory_item_id = row.get::<i64, _>("memory_item_id");
+        let memory_date = row.get::<String, _>("memory_date");
+        let memory_mid = row.get::<String, _>("memory_mid");
+        let media_url = row.get::<String, _>("media_url");
+        let location = row.get::<Option<String>, _>("location");
+
+        if wait_for_pause_or_stop_and_mark_pending(
+            &pool,
+            &[ProcessUnit {
+                memory_group_id: Some(memory_group_id),
+                progress_item_id: memory_item_id,
+                memory_item_ids: vec![memory_item_id],
+                date_taken: memory_date.clone(),
+                location: location.clone(),
+            }],
+        )
+        .await?
+        {
+            break;
+        }
+
+        emit_session_log(
+            &window,
+            format!(
+                "[{}] Extracting mid {} from ZIP archives ({}/{})",
+                memory_date,
+                memory_mid.chars().take(8).collect::<String>(),
+                index + 1,
+                total_files
+            ),
+        )?;
+
+        let zip_scan = match crate::core::zip_hunter::find_and_extract_memory(
+            &zip_paths,
+            &memory_date,
+            &memory_mid,
+            Some(&media_url),
+            Some(&database_url),
+        )
+        .await
+        {
+            Ok(scan) => scan,
+            Err(error) => {
+                failed_count += 1;
+
+                sqlx::query(
+                    "
+                    UPDATE MemoryItem
+                    SET status = 'processing_failed',
+                        last_error_code = 'ZIP_HUNTER_FAILED',
+                        last_error_message = ?1
+                    WHERE id = ?2
+                    ",
+                )
+                .bind(error.to_string())
+                .bind(memory_item_id)
+                .execute(&pool)
+                .await
+                .map_err(|db_error| format!("failed to update ZIP_HUNTER_FAILED status: {db_error}"))?;
+
+                sqlx::query("UPDATE Memories SET status = 'FAILED_NETWORK' WHERE id = ?1")
+                    .bind(memory_group_id)
+                    .execute(&pool)
+                    .await
+                    .map_err(|db_error| format!("failed to update FAILED_NETWORK memory status: {db_error}"))?;
+
+                window
+                    .emit(
+                        PROCESS_PROGRESS_EVENT,
+                        ProcessProgressPayload {
+                            total_files,
+                            completed_files: index + 1,
+                            successful_files: processed_count,
+                            failed_files: failed_count,
+                            memory_item_id: Some(memory_item_id),
+                            status: "error".to_string(),
+                            error_code: Some(ProcessErrorCode::ProcessingFailed),
+                            error_message: Some(error.to_string()),
+                        },
+                    )
+                    .map_err(|emit_error| format!("failed to emit zip-process error progress: {emit_error}"))?;
+
+                continue;
+            }
+        };
+
+        let active_zip_name = zip_scan
+            .main_entry
+            .as_ref()
+            .or(zip_scan.overlay_entry.as_ref())
+            .and_then(|entry| entry.zip_path.file_name())
+            .and_then(|value| value.to_str())
+            .map(str::to_string);
+
+        if let Some(active_zip_name) = active_zip_name.as_deref() {
+            sqlx::query("UPDATE ProcessedZips SET status = 'pending' WHERE status = 'processing'")
+                .execute(&pool)
+                .await
+                .map_err(|error| format!("failed to reset active zip status: {error}"))?;
+
+            sqlx::query(
+                "UPDATE ProcessedZips SET status = 'processing' WHERE filename = ?1 AND job_id = (SELECT id FROM ExportJobs ORDER BY datetime(created_at) DESC, id DESC LIMIT 1)",
+            )
+            .bind(active_zip_name)
+            .execute(&pool)
+            .await
+            .map_err(|error| format!("failed to set active zip status: {error}"))?;
+
+            emit_session_log(
+                &window,
+                format!(
+                    "[{}] Using ZIP {} for mid {}",
+                    memory_date,
+                    active_zip_name,
+                    memory_mid.chars().take(8).collect::<String>()
+                ),
+            )?;
+        }
+
+        let raw_media_paths = zip_scan
+            .staged_main_path
+            .clone()
+            .map(|path| vec![path])
+            .ok_or_else(|| "zip hunter did not produce staged main path".to_string())?;
+
+        let process_result = crate::core::processor::process_media(crate::core::processor::ProcessMediaInput {
+            memory_item_id,
+            memory_group_id: Some(memory_group_id),
+            raw_media_paths,
+            overlay_path: zip_scan.staged_overlay_path.clone(),
+            date_taken: memory_date.clone(),
+            location: location.clone(),
+            export_dir: resolved_output_dir.clone(),
+            thumbnail_dir: thumbnail_path.clone(),
+            keep_originals,
+            database_url: database_url.clone(),
+        })
+        .await;
+
+        match process_result {
+            Ok(crate::core::processor::ProcessMediaResult::Duplicate { content_hash: _ }) => {
+                sqlx::query(
+                    "UPDATE MemoryItem SET status = 'duplicate', last_error_code = NULL, last_error_message = NULL WHERE id = ?1",
+                )
+                .bind(memory_item_id)
+                .execute(&pool)
+                .await
+                .map_err(|error| format!("failed to update duplicate memory item: {error}"))?;
+
+                sqlx::query("UPDATE Memories SET status = 'DUPLICATE' WHERE id = ?1")
+                    .bind(memory_group_id)
+                    .execute(&pool)
+                    .await
+                    .map_err(|error| format!("failed to update duplicate memory group: {error}"))?;
+
+                window.emit(
+                    PROCESS_PROGRESS_EVENT,
+                    ProcessProgressPayload {
+                        total_files,
+                        completed_files: index + 1,
+                        successful_files: processed_count,
+                        failed_files: failed_count,
+                        memory_item_id: Some(memory_item_id),
+                        status: "duplicate".to_string(),
+                        error_code: None,
+                        error_message: None,
+                    },
+                ).map_err(|error| format!("failed to emit duplicate progress: {error}"))?;
+            }
+            Ok(crate::core::processor::ProcessMediaResult::Processed(output)) => {
+                processed_count += 1;
+
+                let relative_media_path = path_to_relative_string(&output.final_media_path, &resolved_output_dir)?;
+                let relative_thumbnail_path = path_to_relative_string(&output.thumbnail_path, &resolved_output_dir)?;
+
+                sqlx::query(
+                    "UPDATE MemoryItem SET status = 'processed', last_error_code = NULL, last_error_message = NULL WHERE id = ?1",
+                )
+                .bind(memory_item_id)
+                .execute(&pool)
+                .await
+                .map_err(|error| format!("failed to update processed memory item: {error}"))?;
+
+                sqlx::query(
+                    "UPDATE Memories SET status = 'PROCESSED', content_hash = ?1, relative_path = ?2, thumbnail_path = ?3 WHERE id = ?4",
+                )
+                .bind(&output.content_hash)
+                .bind(&relative_media_path)
+                .bind(&relative_thumbnail_path)
+                .bind(memory_group_id)
+                .execute(&pool)
+                .await
+                .map_err(|error| format!("failed to update processed memory group: {error}"))?;
+
+                if let Some(active_zip_name) = active_zip_name.as_deref() {
+                    sqlx::query(
+                        "UPDATE ProcessedZips SET status = 'finished' WHERE filename = ?1 AND job_id = (SELECT id FROM ExportJobs ORDER BY datetime(created_at) DESC, id DESC LIMIT 1)",
+                    )
+                    .bind(active_zip_name)
+                    .execute(&pool)
+                    .await
+                    .map_err(|error| format!("failed to update finished zip status: {error}"))?;
+                }
+
+                window.emit(
+                    PROCESS_PROGRESS_EVENT,
+                    ProcessProgressPayload {
+                        total_files,
+                        completed_files: index + 1,
+                        successful_files: processed_count,
+                        failed_files: failed_count,
+                        memory_item_id: Some(memory_item_id),
+                        status: "success".to_string(),
+                        error_code: None,
+                        error_message: None,
+                    },
+                ).map_err(|error| format!("failed to emit zip-process success progress: {error}"))?;
+            }
+            Err(error) => {
+                failed_count += 1;
+
+                sqlx::query(
+                    "UPDATE MemoryItem SET status = 'processing_failed', last_error_code = 'PROCESSING_FAILED', last_error_message = ?1 WHERE id = ?2",
+                )
+                .bind(error.to_string())
+                .bind(memory_item_id)
+                .execute(&pool)
+                .await
+                .map_err(|db_error| format!("failed to update processing_failed memory item: {db_error}"))?;
+
+                sqlx::query("UPDATE Memories SET status = 'processing_failed' WHERE id = ?1")
+                    .bind(memory_group_id)
+                    .execute(&pool)
+                    .await
+                    .map_err(|db_error| format!("failed to update processing_failed memory group: {db_error}"))?;
+
+                window.emit(
+                    PROCESS_PROGRESS_EVENT,
+                    ProcessProgressPayload {
+                        total_files,
+                        completed_files: index + 1,
+                        successful_files: processed_count,
+                        failed_files: failed_count,
+                        memory_item_id: Some(memory_item_id),
+                        status: "error".to_string(),
+                        error_code: Some(ProcessErrorCode::ProcessingFailed),
+                        error_message: Some(error.to_string()),
+                    },
+                ).map_err(|emit_error| format!("failed to emit zip-process failure progress: {emit_error}"))?;
+            }
+        }
+    }
+
     pool.close().await;
     Ok(ProcessMemoriesResult {
         processed_count,
@@ -1445,6 +2357,7 @@ fn resolve_failed_memory_status(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             tauri::async_runtime::block_on(setup_database(app.handle()))
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
@@ -1460,11 +2373,20 @@ pub fn run() {
             db::db_get_pause_resume_flags,
             db::db_get_zip_status,
             import_memories_json,
+            import_memories_from_zip,
             validate_memory_file,
             validate_memory_json_content,
+            validate_base_zip_archive,
+            initialize_zip_session,
+            finalize_zip_session,
+            set_processing_paused,
+            stop_processing_session,
+            resume_processing_session,
+            get_processing_session_overview,
             download_queued_memories,
             resume_export_downloads,
             apply_metadata_to_output_files,
+            process_memories_from_zip_archives,
             process_downloaded_memories,
             get_thumbnails,
             reset_all_app_data

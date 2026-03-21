@@ -1,29 +1,31 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { readAppSettings } from "@/lib/app-settings";
 import { useI18n } from "@/lib/i18n";
 import {
-  downloadQueuedMemories,
+  finalizeZipSession,
+  getProcessingSessionOverview,
+  importMemoriesFromZip,
+  initializeZipSession,
   type DownloadErrorCode,
-  getJobState,
-  getQueuedCount,
-  importMemoriesJson,
   onDownloadProgress,
   onProcessProgress,
-  processDownloadedMemories,
-  validateMemoryFile,
-  validateMemoryJsonContent,
+  onSessionLog,
+  processMemoriesFromZipArchives,
+  resumeProcessingSession,
+  setProcessingPaused,
+  stopProcessingSession,
+  validateBaseZipArchive,
   type DownloadRateLimitSettings,
   type DownloadProgressPayload,
-  type ExportJobState,
   type ProcessErrorCode,
   type ProcessProgressPayload,
 } from "@/lib/memories-api";
 
-type ImportState = "idle" | "validating" | "importing";
-type WorkflowStage = "download" | "process";
+type ImportState = "idle" | "validating" | "running";
 type RuntimeProgress = {
   totalFiles: number;
   completedFiles: number;
@@ -35,18 +37,6 @@ type RuntimeProgress = {
 type ValidationState = "idle" | "validating" | "valid" | "invalid";
 type NoticeTone = "neutral" | "success" | "error";
 
-type UploadableFile = File & {
-  readonly path?: string;
-};
-
-function inferWorkflowStage(jobState: ExportJobState): WorkflowStage {
-  if (jobState.totalFiles > 0 && jobState.downloadedFiles >= jobState.totalFiles) {
-    return "process";
-  }
-
-  return "download";
-}
-
 function loadRateLimitSettings(): DownloadRateLimitSettings | undefined {
   const settings = readAppSettings();
 
@@ -56,28 +46,147 @@ function loadRateLimitSettings(): DownloadRateLimitSettings | undefined {
   };
 }
 
+const DOWNLOADER_SESSION_STORAGE_KEY = "memorysnaper.downloader-session.v1";
+
 export function Workflow() {
   const { t } = useI18n();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [selectedFile, setSelectedFile] = useState<UploadableFile | null>(null);
-  const [hasDownloadableData, setHasDownloadableData] = useState(false);
+  const [selectedZipPaths, setSelectedZipPaths] = useState<string[]>([]);
+
+  const [isPaused, setIsPaused] = useState(false);
+  const [isStopped, setIsStopped] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [activeZip, setActiveZip] = useState<string | null>(null);
+  const [finishedZipFiles, setFinishedZipFiles] = useState<string[]>([]);
+  const [duplicatesSkipped, setDuplicatesSkipped] = useState(0);
+  const [processedFiles, setProcessedFiles] = useState(0);
+  const [logLines, setLogLines] = useState<string[]>([]);
+
   const [importState, setImportState] = useState<ImportState>("idle");
-  const [workflowStage, setWorkflowStage] = useState<WorkflowStage>("download");
-  const [jobState, setJobState] = useState<ExportJobState>({
-    status: "idle",
-    totalFiles: 0,
-    downloadedFiles: 0,
-  });
+  const [totalFiles, setTotalFiles] = useState(0);
+  const [downloadedFiles, setDownloadedFiles] = useState(0);
   const [statusMessage, setStatusMessage] = useState<string>(() => t("downloader.workflow.status.idle"));
   const [noticeTone, setNoticeTone] = useState<NoticeTone>("neutral");
   const [validationState, setValidationState] = useState<ValidationState>("idle");
   const [validationMessage, setValidationMessage] = useState<string>("");
   const [downloadProgress, setDownloadProgress] = useState<RuntimeProgress | null>(null);
   const [processProgress, setProcessProgress] = useState<RuntimeProgress | null>(null);
+  const [storageHydrated, setStorageHydrated] = useState(false);
+
+  useEffect(() => {
+    try {
+      const serialized = window.localStorage.getItem(DOWNLOADER_SESSION_STORAGE_KEY);
+      if (!serialized) {
+        setStorageHydrated(true);
+        return;
+      }
+
+      const persisted = JSON.parse(serialized) as Partial<{
+        jobId: string | null;
+        activeZip: string | null;
+        finishedZipFiles: string[];
+        duplicatesSkipped: number;
+        processedFiles: number;
+        totalFiles: number;
+        downloadedFiles: number;
+        statusMessage: string;
+        noticeTone: NoticeTone;
+        validationState: ValidationState;
+        validationMessage: string;
+        logLines: string[];
+        isPaused: boolean;
+        isStopped: boolean;
+      }>;
+
+      setJobId(persisted.jobId ?? null);
+      setActiveZip(persisted.activeZip ?? null);
+      setFinishedZipFiles(persisted.finishedZipFiles ?? []);
+      setDuplicatesSkipped(persisted.duplicatesSkipped ?? 0);
+      setProcessedFiles(persisted.processedFiles ?? 0);
+      setTotalFiles(persisted.totalFiles ?? 0);
+      setDownloadedFiles(persisted.downloadedFiles ?? 0);
+      setStatusMessage(persisted.statusMessage ?? t("downloader.workflow.status.idle"));
+      setNoticeTone(persisted.noticeTone ?? "neutral");
+      setValidationState(persisted.validationState ?? "idle");
+      setValidationMessage(persisted.validationMessage ?? "");
+      setLogLines(persisted.logLines ?? []);
+      setIsPaused(persisted.isPaused ?? false);
+      setIsStopped(persisted.isStopped ?? false);
+    } catch (error) {
+      console.error("[downloader] Failed to restore persisted session state", error);
+    } finally {
+      setStorageHydrated(true);
+    }
+  }, [t]);
+
+  useEffect(() => {
+    if (!storageHydrated) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        DOWNLOADER_SESSION_STORAGE_KEY,
+        JSON.stringify({
+          jobId,
+          activeZip,
+          finishedZipFiles,
+          duplicatesSkipped,
+          processedFiles,
+          totalFiles,
+          downloadedFiles,
+          statusMessage,
+          noticeTone,
+          validationState,
+          validationMessage,
+          logLines,
+          isPaused,
+          isStopped,
+        }),
+      );
+    } catch (error) {
+      console.error("[downloader] Failed to persist session state", error);
+    }
+  }, [
+    activeZip,
+    downloadedFiles,
+    duplicatesSkipped,
+    finishedZipFiles,
+    isPaused,
+    isStopped,
+    jobId,
+    logLines,
+    noticeTone,
+    processedFiles,
+    statusMessage,
+    totalFiles,
+    validationMessage,
+    validationState,
+    storageHydrated,
+  ]);
 
   const setNotice = (message: string, tone: NoticeTone = "neutral") => {
     setStatusMessage(message);
     setNoticeTone(tone);
+  };
+
+  const pushLogLine = (message: string) => {
+    setLogLines((previous) => {
+      const next = [...previous, message];
+      return next.slice(Math.max(0, next.length - 150));
+    });
+  };
+
+  const refreshSessionOverview = async () => {
+    const overview = await getProcessingSessionOverview();
+    setJobId(overview.jobId);
+    setTotalFiles(overview.totalFiles);
+    setDownloadedFiles(overview.downloadedFiles);
+    setProcessedFiles(overview.processedFiles);
+    setDuplicatesSkipped(overview.duplicatesSkipped);
+    setIsPaused(overview.isPaused);
+    setIsStopped(overview.isStopped);
+    setActiveZip(overview.activeZip);
+    setFinishedZipFiles(overview.finishedZipFiles);
   };
 
   const resolveUploadErrorMessage = (error: unknown): string => {
@@ -153,26 +262,22 @@ export function Workflow() {
   };
 
   useEffect(() => {
-    const loadJobState = async () => {
+    const loadOverview = async () => {
       try {
-        const [currentJobState, queuedCount] = await Promise.all([
-          getJobState(),
-          getQueuedCount(),
-        ]);
-        setJobState(currentJobState);
-        setWorkflowStage(inferWorkflowStage(currentJobState));
-        setHasDownloadableData(queuedCount > 0);
+        await refreshSessionOverview();
       } catch (error) {
-        console.error("[downloader] Failed to load initial job state", error);
+        console.error("[downloader] Failed to load session overview", error);
         setNotice(t("downloader.workflow.status.loadingJobState"), "error");
       }
     };
-    void loadJobState();
+
+    void loadOverview();
   }, [t]);
 
   useEffect(() => {
     let unlistenDownload: (() => void) | null = null;
     let unlistenProcess: (() => void) | null = null;
+    let unlistenSessionLog: (() => void) | null = null;
     let isDisposed = false;
 
     const startListeners = async () => {
@@ -189,13 +294,8 @@ export function Workflow() {
           status: payload.status,
           errorCode: payload.errorCode,
         });
-
-        setJobState((previousState) => ({
-          ...previousState,
-          totalFiles: payload.totalFiles,
-          downloadedFiles: payload.successfulFiles,
-          status: payload.status,
-        }));
+        setTotalFiles(payload.totalFiles);
+        setDownloadedFiles(payload.successfulFiles);
 
         if (payload.status === "error") {
           setNotice(translateDownloadErrorCode(payload.errorCode), "error");
@@ -232,6 +332,12 @@ export function Workflow() {
           errorCode: payload.errorCode,
         });
 
+        setProcessedFiles(payload.successfulFiles);
+
+        if (payload.status === "duplicate") {
+          setDuplicatesSkipped((previous) => previous + 1);
+        }
+
         if (payload.status === "error") {
           setNotice(translateProcessErrorCode(payload.errorCode), "error");
         }
@@ -243,6 +349,17 @@ export function Workflow() {
       }
 
       unlistenProcess = processUnlisten;
+
+      const sessionLogUnlisten = await onSessionLog((payload) => {
+        pushLogLine(payload.message);
+      });
+
+      if (isDisposed) {
+        sessionLogUnlisten();
+        return;
+      }
+
+      unlistenSessionLog = sessionLogUnlisten;
     };
 
     void startListeners();
@@ -255,192 +372,269 @@ export function Workflow() {
       if (unlistenProcess) {
         unlistenProcess();
       }
+      if (unlistenSessionLog) {
+        unlistenSessionLog();
+      }
     };
   }, [t]);
 
   const progressValue = useMemo(() => {
-    if (workflowStage === "process") {
-      if (!processProgress || processProgress.totalFiles <= 0) {
-        return 0;
-      }
-
-      return Math.min(
-        100,
-        Math.round((processProgress.completedFiles / processProgress.totalFiles) * 100),
-      );
-    }
-
-    if (jobState.totalFiles <= 0) {
+    if (totalFiles <= 0) {
       return 0;
     }
 
-    return Math.min(100, Math.round((jobState.downloadedFiles / jobState.totalFiles) * 100));
-  }, [jobState.downloadedFiles, jobState.totalFiles, processProgress, workflowStage]);
+    const completed = processProgress?.completedFiles ?? processedFiles;
+    return Math.min(100, Math.round((completed / totalFiles) * 100));
+  }, [processProgress?.completedFiles, processedFiles, totalFiles]);
 
   const isWorking = importState !== "idle";
+  const canStart = selectedZipPaths.length > 0 && !isWorking;
 
-  const onUpload = async (fileToUpload: UploadableFile) => {
-    console.log(
-      `Starting upload for file: ${fileToUpload.name}, size: ${fileToUpload.size} bytes, path: ${fileToUpload.path ?? "N/A"}`,
-    );
+  type ZipSelection = {
+    uuid: string;
+    partNumber: number | null;
+    fileName: string;
+    path: string;
+  };
 
-    const fileName = fileToUpload.name.toLowerCase();
-    const isJson = fileName.endsWith(".json");
-    const isZip = fileName.endsWith(".zip");
+  const extractFileNameFromPath = (path: string): string => {
+    const normalized = path.replace(/\\/g, "/");
+    const segments = normalized.split("/");
+    return segments[segments.length - 1] ?? path;
+  };
 
-    if (!isJson && !isZip) {
-      const message = t("downloader.workflow.status.unsupportedFile");
-      setValidationState("invalid");
-      setValidationMessage(message);
-      setNotice(message, "error");
-      setHasDownloadableData(false);
+  const parseSnapchatZipName = (fileName: string): { uuid: string; partNumber: number | null } | null => {
+    const lowered = fileName.toLowerCase();
+    const withoutExtension = lowered.endsWith(".zip") ? lowered.slice(0, -4) : lowered;
+
+    if (!withoutExtension.startsWith("mydata~")) {
+      return null;
+    }
+
+    const rest = withoutExtension.slice("mydata~".length).trim();
+    if (rest.length === 0) {
+      return null;
+    }
+
+    const maybePart = rest.match(/^(?<uuid>[0-9a-f-]+)\s+(?<part>\d+)$/);
+    if (maybePart?.groups?.uuid && maybePart.groups.part) {
+      return {
+        uuid: maybePart.groups.uuid,
+        partNumber: Number(maybePart.groups.part),
+      };
+    }
+
+    if (/^[0-9a-f-]+$/.test(rest)) {
+      return { uuid: rest, partNumber: null };
+    }
+
+    return null;
+  };
+
+  const buildZipSelection = (paths: string[]): ZipSelection[] => {
+    const parsed = paths.map((path) => {
+      if (!path || path.trim().length === 0) {
+        throw new Error("ZIP_PATH_REQUIRED");
+      }
+
+      const fileName = extractFileNameFromPath(path);
+
+      const parsedName = parseSnapchatZipName(fileName);
+      if (!parsedName) {
+        throw new Error("INVALID_ZIP");
+      }
+
+      return {
+        uuid: parsedName.uuid,
+        partNumber: parsedName.partNumber,
+        fileName,
+        path,
+      } satisfies ZipSelection;
+    });
+
+    const mainZips = parsed.filter((entry) => entry.partNumber === null);
+    if (mainZips.length !== 1) {
+      throw new Error("INVALID_ZIP");
+    }
+
+    const mainUuid = mainZips[0].uuid;
+    const mixedUuid = parsed.some((entry) => entry.uuid !== mainUuid);
+    if (mixedUuid) {
+      throw new Error("INVALID_ZIP");
+    }
+
+    const ordered = [...parsed].sort((left, right) => {
+      const leftPart = left.partNumber ?? 0;
+      const rightPart = right.partNumber ?? 0;
+      return leftPart - rightPart;
+    });
+
+    return ordered;
+  };
+
+  const onPickZipFiles = async () => {
+    try {
+      const picked = await open({
+        multiple: true,
+        filters: [{ name: "ZIP", extensions: ["zip"] }],
+      });
+
+      if (!picked) {
+        return;
+      }
+
+      const selected = Array.isArray(picked) ? picked : [picked];
+      const normalized = selected.filter((value): value is string => typeof value === "string");
+
+      if (normalized.length === 0) {
+        setNotice("No ZIP paths were returned by the file picker.", "error");
+        return;
+      }
+
+      setSelectedZipPaths(normalized);
+      setValidationState("idle");
+      setValidationMessage("");
+      setNotice(`${normalized.length} ZIP file(s) selected.`, "success");
+    } catch (error) {
+      console.error("[downloader] Failed to open ZIP picker", error);
+      setNotice("Could not open file picker. Please restart the app and try again.", "error");
+    }
+  };
+
+  const onStartSession = async () => {
+    if (selectedZipPaths.length === 0) {
+      setNotice("Select Snapchat ZIP exports to continue.", "error");
       return;
     }
 
     try {
-      setImportState("validating");
+      setLogLines([]);
+      setFinishedZipFiles([]);
+      setDuplicatesSkipped(0);
+      setProcessedFiles(0);
+      setDownloadProgress(null);
+      setProcessProgress(null);
+      setIsPaused(false);
+      setIsStopped(false);
+
+      setImportState("running");
       setValidationState("validating");
-      setValidationMessage(t("downloader.workflow.status.validating", { fileName: fileToUpload.name }));
-      setNotice(t("downloader.workflow.status.validating", { fileName: fileToUpload.name }));
+      setValidationMessage("Validating Snapchat ZIP set...");
+      setNotice("Validating session inputs...");
 
-      let jsonContent: string | null = null;
-
-      if (isZip) {
-        if (!fileToUpload.path || fileToUpload.path.trim().length === 0) {
-          throw new Error("ZIP_PATH_REQUIRED");
-        }
-
-        const isValid = await validateMemoryFile(fileToUpload.path);
-        if (!isValid) {
-          throw new Error("INVALID_ZIP");
-        }
-      } else {
-        jsonContent = await fileToUpload.text();
-        const isValid = await validateMemoryJsonContent(jsonContent);
-        if (!isValid) {
-          throw new Error("INVALID_JSON");
-        }
+      const orderedZipSelection = buildZipSelection(selectedZipPaths);
+      const mainZip = orderedZipSelection.find((zip) => zip.partNumber === null);
+      if (!mainZip) {
+        throw new Error("INVALID_ZIP");
       }
+
+      const zipPaths = orderedZipSelection.map((zip) => zip.path);
+
+      const firstZipValid = await validateBaseZipArchive(mainZip.path);
+      if (!firstZipValid) {
+        throw new Error("INVALID_ZIP");
+      }
+
+      const zipSession = await initializeZipSession(zipPaths);
+      setJobId(zipSession.jobId);
+      setActiveZip(zipSession.activeZip);
+      pushLogLine(
+        `[${new Date().toISOString().slice(0, 10)}] ZIP session ${zipSession.jobId} initialized (main: ${mainZip.fileName}, parts: ${Math.max(0, zipPaths.length - 1)})`,
+      );
 
       setValidationState("valid");
-      setValidationMessage(t("downloader.workflow.status.valid", { fileName: fileToUpload.name }));
-      setNotice(t("downloader.workflow.status.importing", { fileName: fileToUpload.name }), "success");
-      setHasDownloadableData(true);
+      setValidationMessage("Main ZIP verified with json/memories_history.json and memories/.");
+      setNotice("Importing memories history from main ZIP...", "success");
 
-      setImportState("importing");
-      const importedJsonContent = jsonContent ?? (await fileToUpload.text());
-      const summary = await importMemoriesJson(importedJsonContent);
-
-      setNotice(
-        t("downloader.workflow.status.imported", {
-          importedCount: summary.importedCount,
-          skippedDuplicates: summary.skippedDuplicates,
-        }),
-        "success",
+      const summary = await importMemoriesFromZip(mainZip.path);
+      pushLogLine(
+        `[${new Date().toISOString().slice(0, 10)}] Imported ${summary.importedCount} records (${summary.skippedDuplicates} duplicates skipped on import)`,
       );
-      console.log(`Import result: ${summary.importedCount} imported, ${summary.skippedDuplicates} duplicates skipped, ${summary.parsedCount} total parsed.`);
 
-      // Mark import as completed immediately after a successful import call.
-      // This guarantees the download button unlocks,
-      // even if follow-up state refresh calls fail.
-      setHasDownloadableData(true);
-
-      try {
-        const [currentJobState, queuedCount] = await Promise.all([
-          getJobState(),
-          getQueuedCount(),
-        ]);
-        setJobState(currentJobState);
-        setWorkflowStage(inferWorkflowStage(currentJobState));
-        setHasDownloadableData(queuedCount > 0);
-      } catch (refreshError) {
-        console.error("Post-import state refresh failed:", refreshError);
+      const rateLimitSettings = loadRateLimitSettings();
+      if (rateLimitSettings) {
+        pushLogLine(
+          `[${new Date().toISOString().slice(0, 10)}] ZIP-first mode active; network download is fallback only`,
+        );
       }
+
+      setNotice(t("downloader.workflow.status.processing"));
+      const processResult = await processMemoriesFromZipArchives(zipPaths, ".raw_cache", false);
+      setNotice(
+        t("downloader.workflow.status.processed", {
+          processedCount: processResult.processedCount,
+          failedCount: processResult.failedCount,
+        }),
+        processResult.failedCount > 0 ? "error" : "success",
+      );
+
+      await finalizeZipSession(zipSession.jobId);
+      setFinishedZipFiles(orderedZipSelection.map((zip) => zip.fileName));
+
+      await refreshSessionOverview();
     } catch (error) {
       console.error("Upload failed:", error);
       const message = resolveUploadErrorMessage(error);
       setValidationState("invalid");
       setValidationMessage(message);
       setNotice(message, "error");
-      setHasDownloadableData(false);
     } finally {
       setImportState("idle");
     }
   };
 
-  const onFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.item(0) ?? null;
-    const uploadableFile = file as UploadableFile | null;
-    setSelectedFile(uploadableFile);
-    setValidationState("idle");
-    setValidationMessage("");
-
-    if (!uploadableFile) {
-      setNotice(t("downloader.workflow.status.noFileSelected"));
-      return;
-    }
-
-    void onUpload(uploadableFile);
-  };
-
-  const onRemoveFile = () => {
-    setSelectedFile(null);
+  const onRemoveSelection = () => {
+    setSelectedZipPaths([]);
+    setJobId(null);
+    setActiveZip(null);
+    setFinishedZipFiles([]);
+    setDuplicatesSkipped(0);
+    setProcessedFiles(0);
+    setTotalFiles(0);
+    setDownloadedFiles(0);
+    setDownloadProgress(null);
+    setProcessProgress(null);
+    setIsPaused(false);
+    setIsStopped(false);
+    setLogLines([]);
     setValidationState("idle");
     setValidationMessage("");
     setNotice(t("downloader.workflow.status.idle"));
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
+
+    try {
+      window.localStorage.removeItem(DOWNLOADER_SESSION_STORAGE_KEY);
+    } catch (error) {
+      console.error("[downloader] Failed to clear persisted session state", error);
     }
   };
 
-  const onStartDownload = async () => {
-    const rateLimitSettings = loadRateLimitSettings();
-
-    console.log("[downloader] Starting queued downloads", {
-      outputDir: ".raw_cache",
-      settings: rateLimitSettings,
-    });
-
+  const onPauseOrResume = async () => {
     try {
-      setNotice(t("downloader.workflow.status.downloading"));
-      setDownloadProgress(null);
-      const downloadedCount = await downloadQueuedMemories(".raw_cache", rateLimitSettings);
-      const currentJobState = await getJobState();
-      setJobState(currentJobState);
-      setWorkflowStage(inferWorkflowStage(currentJobState));
-      setNotice(t("downloader.workflow.status.downloaded", { count: downloadedCount }), "success");
-      console.log("[downloader] Download command completed", {
-        downloadedCount,
-        jobState: currentJobState,
-      });
+      if (isPaused) {
+        await resumeProcessingSession();
+        setIsPaused(false);
+        pushLogLine(`[${new Date().toISOString().slice(0, 10)}] Resume requested`);
+      } else {
+        await setProcessingPaused(true);
+        setIsPaused(true);
+        pushLogLine(`[${new Date().toISOString().slice(0, 10)}] Pause requested`);
+      }
     } catch (error) {
-      console.error("[downloader] downloadQueuedMemories failed", {
-        outputDir: ".raw_cache",
-        settings: rateLimitSettings,
-        error,
-      });
+      console.error("[downloader] pause/resume failed", error);
       setNotice(t("downloader.workflow.error.generic"), "error");
     }
   };
 
-  const onProcessFiles = async () => {
+  const onStopSession = async () => {
     try {
-      setNotice(t("downloader.workflow.status.processing"));
-      setProcessProgress(null);
-      const result = await processDownloadedMemories(".raw_cache", true);
-      setNotice(
-        t("downloader.workflow.status.processed", {
-          processedCount: result.processedCount,
-          failedCount: result.failedCount,
-        }),
-        result.failedCount > 0 ? "error" : "success",
-      );
+      await stopProcessingSession();
+      setIsStopped(true);
+      setIsPaused(false);
+      pushLogLine(`[${new Date().toISOString().slice(0, 10)}] Stop requested`);
+      setNotice("Stop requested. Remaining files will stay pending.", "error");
+      await refreshSessionOverview();
     } catch (error) {
-      console.error("[downloader] processDownloadedMemories failed", {
-        outputDir: ".raw_cache",
-        keepOriginals: true,
-        error,
-      });
+      console.error("[downloader] stop failed", error);
       setNotice(t("downloader.workflow.error.generic"), "error");
     }
   };
@@ -448,37 +642,50 @@ export function Workflow() {
   return (
     <div className="space-y-4">
       <div className="space-y-2 rounded-md border border-border p-3">
-        <p className="text-sm font-medium">{t("downloader.workflow.upload.title")}</p>
+        <p className="text-sm font-medium">Session Inputs</p>
         <p className="text-xs text-muted-foreground">
-          {t("downloader.workflow.upload.description")}
+          Upload Snapchat ZIP exports named like mydata~&lt;uuid&gt; (main) and optional mydata~&lt;uuid&gt; &lt;num&gt; parts.
+          The main ZIP must include json/memories_history.json and all ZIPs must include memories/.
         </p>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".zip,.json,application/json,application/zip"
-          onChange={onFileChange}
-          className="hidden"
-        />
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          {!selectedFile ? (
+
+        <div className="space-y-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <span className="min-w-28 text-xs text-muted-foreground">ZIPs</span>
+            <span className="flex-1 truncate text-sm">
+              {selectedZipPaths.length > 0
+                ? `${selectedZipPaths.length} ZIP files selected`
+                : "No ZIP files selected"}
+            </span>
             <Button
               type="button"
               variant="outline"
-              className="sm:ml-auto"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => {
+                void onPickZipFiles();
+              }}
               disabled={isWorking}
             >
-              {t("downloader.workflow.button.upload")}
+              Select ZIPs
             </Button>
-          ) : (
-            <>
-              <span className="flex-1 truncate text-sm">{selectedFile.name}</span>
-              <Button type="button" variant="outline" onClick={onRemoveFile} disabled={isWorking}>
-                {t("downloader.workflow.button.remove")}
-              </Button>
-            </>
-          )}
+          </div>
+
+          {selectedZipPaths.length > 0 ? (
+            <div className="rounded-md border border-border p-2 text-xs text-muted-foreground">
+              {selectedZipPaths.map((path) => (
+                <p key={path}>{extractFileNameFromPath(path)}</p>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="flex gap-2">
+            <Button type="button" onClick={onStartSession} disabled={!canStart}>
+              Start Session
+            </Button>
+            <Button type="button" variant="outline" onClick={onRemoveSelection} disabled={isWorking}>
+              Clear Selection
+            </Button>
+          </div>
         </div>
+
         {validationState !== "idle" ? (
           <p
             className={`text-xs ${
@@ -495,46 +702,62 @@ export function Workflow() {
       </div>
 
       <div className="space-y-2">
-        <p className="text-sm text-muted-foreground">
-          {workflowStage === "download"
-            ? t("downloader.workflow.progress.download")
-            : t("downloader.workflow.progress.processing")}
-        </p>
+        <p className="text-sm text-muted-foreground">Global Progress</p>
         <Progress value={progressValue} className="h-2" />
-        {workflowStage === "download" ? (
-          <p className="text-xs text-muted-foreground">
-            {t("downloader.workflow.progress.downloadDetails", {
-              successful: downloadProgress?.successfulFiles ?? jobState.downloadedFiles,
-              total: downloadProgress?.totalFiles ?? jobState.totalFiles,
-              status: translateDownloadStatus(downloadProgress?.status ?? jobState.status),
-            })}
+
+        <div className="grid gap-1 text-xs text-muted-foreground">
+          <p>Session Job: {jobId ?? "n/a"}</p>
+          <p>Files Processed: {processProgress?.completedFiles ?? processedFiles} / {totalFiles}</p>
+          <p>Downloaded Files: {downloadProgress?.successfulFiles ?? downloadedFiles} / {totalFiles}</p>
+          <p>Duplicates Skipped: {duplicatesSkipped}</p>
+          <p>Active ZIP: {activeZip ?? "n/a"}</p>
+          <p>
+            Download Status: {translateDownloadStatus(downloadProgress?.status ?? "idle")} · Process Status: {processProgress?.status ?? "idle"}
           </p>
+          <p>Paused: {isPaused ? "Yes" : "No"} · Stopped: {isStopped ? "Yes" : "No"}</p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" onClick={onPauseOrResume}>
+          {isPaused ? "Resume" : "Pause"}
+        </Button>
+        <Button type="button" variant="destructive" onClick={onStopSession}>
+          Stop
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            void refreshSessionOverview();
+          }}
+        >
+          Reload Session State
+        </Button>
+      </div>
+
+      <div className="space-y-2 rounded-md border border-border p-3">
+        <p className="text-sm font-medium">ZIP Status</p>
+        {finishedZipFiles.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No finished ZIP files yet.</p>
         ) : (
-          <p className="text-xs text-muted-foreground">
-            {t("downloader.workflow.progress.processDetails", {
-              completed: processProgress?.completedFiles ?? 0,
-              total: processProgress?.totalFiles ?? 0,
-              successful: processProgress?.successfulFiles ?? 0,
-              failed: processProgress?.failedFiles ?? 0,
-            })}
-          </p>
+          <div className="grid gap-1 text-xs text-muted-foreground">
+            {finishedZipFiles.map((zipFile) => (
+              <p key={zipFile}>✔ {zipFile}</p>
+            ))}
+          </div>
         )}
       </div>
 
-      <div className="flex gap-2">
-        {workflowStage === "download" ? (
-          <Button
-            type="button"
-            onClick={onStartDownload}
-            disabled={!hasDownloadableData && validationState !== "valid"}
-          >
-            {t("downloader.workflow.button.startDownload")}
-          </Button>
-        ) : (
-          <Button type="button" variant="outline" onClick={onProcessFiles}>
-            {t("downloader.workflow.button.processFiles")}
-          </Button>
-        )}
+      <div className="space-y-2 rounded-md border border-border p-3">
+        <p className="text-sm font-medium">Live Console</p>
+        <div className="max-h-40 overflow-auto rounded-sm bg-muted/40 p-2 text-xs text-muted-foreground">
+          {logLines.length === 0 ? (
+            <p>No logs yet.</p>
+          ) : (
+            logLines.map((line, index) => <p key={`${index}-${line}`}>{line}</p>)
+          )}
+        </div>
       </div>
 
       <p
