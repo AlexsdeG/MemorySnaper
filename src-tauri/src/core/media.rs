@@ -224,16 +224,20 @@ fn build_ffmpeg_overlay_args(
         base_media_path.to_string_lossy().to_string(),
         "-i".to_string(),
         overlay_path.to_string_lossy().to_string(),
-        "-filter_complex".to_string(),
-        "[0:v][1:v]overlay=0:0:format=auto".to_string(),
     ];
 
     match media_kind {
         MediaKind::Image => {
+            args.push("-filter_complex".to_string());
+            args.push("[0:v][1:v]overlay=0:0:format=auto".to_string());
             args.push("-frames:v".to_string());
             args.push("1".to_string());
         }
         MediaKind::Video => {
+            // Scale the overlay to match the base video dimensions before compositing,
+            // so the overlay fills the full frame regardless of the PNG's native size.
+            args.push("-filter_complex".to_string());
+            args.push("[1:v][0:v]scale2ref[ov][base];[base][ov]overlay=0:0:format=auto".to_string());
             args.push("-map".to_string());
             args.push("0:a?".to_string());
             args.push("-c:a".to_string());
