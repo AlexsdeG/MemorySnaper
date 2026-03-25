@@ -62,11 +62,15 @@ export function MediaViewerModal({
 
     const mediaContainer = mediaContainerRef.current;
     const videoElement = videoRef.current;
+    const isManagedFullscreen =
+      (mediaContainer !== null &&
+        (fullscreenElement === mediaContainer || mediaContainer.contains(fullscreenElement))) ||
+      (videoElement !== null &&
+        (fullscreenElement === videoElement ||
+          videoElement.contains(fullscreenElement) ||
+          (fullscreenElement instanceof HTMLElement && fullscreenElement.contains(videoElement))));
 
-    setIsFullscreen(
-      (mediaContainer !== null && fullscreenElement === mediaContainer) ||
-        (videoElement !== null && fullscreenElement === videoElement),
-    );
+    setIsFullscreen(isManagedFullscreen);
   };
 
   const item =
@@ -129,6 +133,37 @@ export function MediaViewerModal({
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !item || item.mediaKind !== "video") {
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    const syncFromVideo = () => {
+      const hasSound = !video.muted && video.volume > 0;
+      setIsSoundEnabled(hasSound);
+    };
+
+    const syncFullscreenFromVideo = () => {
+      syncFullscreenState();
+    };
+
+    video.addEventListener("volumechange", syncFromVideo);
+    video.addEventListener("webkitbeginfullscreen", syncFullscreenFromVideo as EventListener);
+    video.addEventListener("webkitendfullscreen", syncFullscreenFromVideo as EventListener);
+    syncFromVideo();
+
+    return () => {
+      video.removeEventListener("volumechange", syncFromVideo);
+      video.removeEventListener("webkitbeginfullscreen", syncFullscreenFromVideo as EventListener);
+      video.removeEventListener("webkitendfullscreen", syncFullscreenFromVideo as EventListener);
+    };
+  }, [open, item?.id, item?.mediaKind]);
 
   const videoMimeType = useMemo(() => {
     if (!item) {
@@ -289,7 +324,7 @@ export function MediaViewerModal({
       return;
     }
 
-    const fullscreenTarget = item.mediaKind === "video" ? videoRef.current : mediaContainerRef.current;
+    const fullscreenTarget = mediaContainerRef.current;
     try {
       await fullscreenTarget?.requestFullscreen();
       setIsFullscreen(true);
@@ -322,7 +357,20 @@ export function MediaViewerModal({
                 variant="outline"
                 size="icon"
                 className="h-9 w-9 border-white/20 bg-black/30 text-white hover:bg-black/50"
-                onClick={() => setIsSoundEnabled((previous) => !previous)}
+                onClick={() => {
+                  const video = videoRef.current;
+                  if (!video) {
+                    setIsSoundEnabled((previous) => !previous);
+                    return;
+                  }
+
+                  const nextHasSound = video.muted || video.volume <= 0;
+                  if (nextHasSound && video.volume <= 0) {
+                    video.volume = 1;
+                  }
+                  video.muted = !nextHasSound;
+                  setIsSoundEnabled(nextHasSound);
+                }}
                 aria-label={
                   isSoundEnabled
                     ? t("viewer.modal.soundDisable")
@@ -412,40 +460,57 @@ export function MediaViewerModal({
             }`}
           >
             {item.mediaKind === "video" ? (
-              <div className="flex h-full w-full flex-col items-center justify-center gap-3">
-                {isVideoLoading ? (
-                  <p className="text-xs text-white/85">{t("viewer.modal.videoLoading")}</p>
+              <>
+                {isFullscreen ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="absolute right-4 top-4 z-20 h-10 w-10 border-white/20 bg-black/40 text-white hover:bg-black/60"
+                    onClick={() => {
+                      void exitFullscreen();
+                    }}
+                    aria-label={t("viewer.modal.close")}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
                 ) : null}
 
-                <video
-                  ref={videoRef}
-                  key={videoObjectUrl ?? item.mediaSrc}
-                  className="max-h-full max-w-full rounded-lg object-contain"
-                  style={{ transform: `rotate(${currentRotation}deg)` }}
-                  controls
-                  autoPlay
-                  muted={!isSoundEnabled}
-                  playsInline
-                  preload="metadata"
-                  onVolumeChange={(event) => {
-                    const target = event.currentTarget;
-                    const hasSound = !target.muted && target.volume > 0;
-                    setIsSoundEnabled(hasSound);
-                  }}
-                  onError={() => {
-                    setVideoLoadError(true);
-                    setIsVideoLoading(false);
-                  }}
-                >
-                  <source src={videoObjectUrl ?? item.mediaSrc} type={videoMimeType} />
-                </video>
+                <div className="flex h-full w-full flex-col items-center justify-center gap-3">
+                  {isVideoLoading ? (
+                    <p className="text-xs text-white/85">{t("viewer.modal.videoLoading")}</p>
+                  ) : null}
 
-                {videoLoadError ? (
-                  <p className="max-w-3xl text-center text-xs text-white/85">
-                    {t("viewer.modal.videoUnsupported")}
-                  </p>
-                ) : null}
-              </div>
+                  <video
+                    ref={videoRef}
+                    key={videoObjectUrl ?? item.mediaSrc}
+                    className="max-h-full max-w-full rounded-lg object-contain"
+                    style={{ transform: `rotate(${currentRotation}deg)` }}
+                    controls
+                    autoPlay
+                    muted={!isSoundEnabled}
+                    playsInline
+                    preload="metadata"
+                    onVolumeChange={(event) => {
+                      const target = event.currentTarget;
+                      const hasSound = !target.muted && target.volume > 0;
+                      setIsSoundEnabled(hasSound);
+                    }}
+                    onError={() => {
+                      setVideoLoadError(true);
+                      setIsVideoLoading(false);
+                    }}
+                  >
+                    <source src={videoObjectUrl ?? item.mediaSrc} type={videoMimeType} />
+                  </video>
+
+                  {videoLoadError ? (
+                    <p className="max-w-3xl text-center text-xs text-white/85">
+                      {t("viewer.modal.videoUnsupported")}
+                    </p>
+                  ) : null}
+                </div>
+              </>
             ) : (
               <>
                 {isFullscreen ? (
