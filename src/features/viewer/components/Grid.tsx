@@ -14,7 +14,6 @@ type GridProps = {
 
 const GRID_COLUMNS = 4;
 const ESTIMATED_ROW_HEIGHT = 140;
-const VIEWPORT_HEIGHT = 420;
 
 export function Grid({ items }: GridProps) {
   const { t } = useI18n();
@@ -38,8 +37,7 @@ export function Grid({ items }: GridProps) {
   return (
     <div
       ref={parentRef}
-      className="relative overflow-auto rounded-md border border-border"
-      style={{ height: VIEWPORT_HEIGHT }}
+      className="relative h-full min-h-[320px] overflow-auto rounded-md border border-border"
     >
       <div
         className="relative w-full"

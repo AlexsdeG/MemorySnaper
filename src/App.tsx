@@ -67,13 +67,13 @@ function App() {
 
       {/* Step 1.3 — Scrollable content area; pb-16 prevents mobile tab bar overlap */}
       <div className="flex-1 overflow-y-auto pb-16 md:pb-0">
-        <main className="mx-auto w-full max-w-4xl px-4 py-6">
+        <main className="mx-auto flex h-full w-full flex-col px-4 py-6">
           <header className="mb-6">
             <h1 className="text-2xl font-semibold tracking-tight">{t("app.header.title")}</h1>
             <p className="text-sm text-muted-foreground">{t("app.header.subtitle")}</p>
           </header>
 
-          <section aria-label={tabContent.title}>{tabContent.component}</section>
+          <section aria-label={tabContent.title} className="flex-1 min-h-0">{tabContent.component}</section>
         </main>
       </div>
     </div>

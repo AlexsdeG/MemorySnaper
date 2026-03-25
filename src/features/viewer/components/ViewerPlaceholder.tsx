@@ -51,14 +51,14 @@ export function ViewerPlaceholder() {
   }, [t]);
 
   return (
-    <Card className="w-full max-w-4xl mx-auto">
+    <Card className="mx-auto flex h-full w-full flex-col">
       <CardHeader>
         <CardTitle>{t("viewer.card.title")}</CardTitle>
         <CardDescription>
           {t("viewer.card.description")}
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="flex min-h-0 flex-1 flex-col space-y-3">
         <p className="text-sm text-muted-foreground">{status}</p>
         <Grid items={items} />
       </CardContent>
