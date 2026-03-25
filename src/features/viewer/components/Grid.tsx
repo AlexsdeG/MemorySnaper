@@ -13,7 +13,7 @@ type GridProps = {
 };
 
 const GRID_COLUMNS = 4;
-const ESTIMATED_ROW_HEIGHT = 140;
+const ESTIMATED_ROW_HEIGHT = 220;
 
 export function Grid({ items }: GridProps) {
   const { t } = useI18n();
@@ -49,20 +49,21 @@ export function Grid({ items }: GridProps) {
           return (
             <div
               key={virtualRow.key}
+              ref={rowVirtualizer.measureElement}
               className="absolute left-0 top-0 grid w-full grid-cols-2 gap-2 p-2 sm:grid-cols-4"
               style={{ transform: `translateY(${virtualRow.start}px)` }}
             >
               {rowItems.map((item) => (
                 <div
                   key={item.id}
-                  className="aspect-square overflow-hidden rounded-md border border-border bg-muted"
+                  className="aspect-[9/16] overflow-hidden rounded-md border border-border bg-background"
                 >
                   {item.src ? (
                     <img
                       src={item.src}
                       alt={t("viewer.grid.thumbnailAlt", { id: item.id })}
                       loading="lazy"
-                      className="h-full w-full object-cover"
+                      className="block h-full w-full scale-[1.01] bg-background object-cover"
                       onError={() => {
                         console.error("[viewer] Thumbnail failed to load", {
                           id: item.id,

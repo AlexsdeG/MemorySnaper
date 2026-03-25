@@ -416,7 +416,7 @@ async fn generate_webp_thumbnail(
                 "-i",
                 &media_path.to_string_lossy(),
                 "-vf",
-                "scale=300:300:force_original_aspect_ratio=decrease,pad=300:300:(ow-iw)/2:(oh-ih)/2",
+                "crop=iw-2:ih-2:1:1,scale=300:300:force_original_aspect_ratio=decrease:flags=lanczos",
                 "-frames:v",
                 "1",
                 &thumbnail_path.to_string_lossy(),
