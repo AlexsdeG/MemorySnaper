@@ -462,6 +462,34 @@ export function MediaViewerModal({
             }`}
           >
             {isFullscreen ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="absolute left-4 z-20 h-10 w-10 border-white/20 bg-black/40 text-white hover:bg-black/60 disabled:opacity-30"
+                  onClick={onPrevious}
+                  disabled={isFirst}
+                  aria-label={t("viewer.modal.previous")}
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="absolute right-4 z-20 h-10 w-10 border-white/20 bg-black/40 text-white hover:bg-black/60 disabled:opacity-30"
+                  onClick={onNext}
+                  disabled={isLast}
+                  aria-label={t("viewer.modal.next")}
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </Button>
+              </>
+            ) : null}
+
+            {isFullscreen ? (
               <div className="absolute right-4 top-4 z-20 flex items-center gap-2">
                 {item.mediaKind === "video" ? (
                   <Button
