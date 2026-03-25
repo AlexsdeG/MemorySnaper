@@ -56,6 +56,16 @@ export type ThumbnailItem = {
   thumbnailPath: string;
 };
 
+export type ViewerMediaKind = "image" | "video";
+
+export type ViewerItem = {
+  memoryItemId: number;
+  dateTaken: string;
+  thumbnailPath: string;
+  mediaPath: string;
+  mediaKind: ViewerMediaKind;
+};
+
 export type DownloadRateLimitSettings = {
   requestsPerMinute: number;
   concurrentDownloads: number;
@@ -190,6 +200,13 @@ export async function getThumbnails(
   limit: number,
 ): Promise<ThumbnailItem[]> {
   return invoke<ThumbnailItem[]>("get_thumbnails", { offset, limit });
+}
+
+export async function getViewerItems(
+  offset: number,
+  limit: number,
+): Promise<ViewerItem[]> {
+  return invoke<ViewerItem[]>("get_viewer_items", { offset, limit });
 }
 
 export async function resetAllAppData(): Promise<void> {

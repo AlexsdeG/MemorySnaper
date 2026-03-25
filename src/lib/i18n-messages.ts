@@ -92,6 +92,13 @@ const enMessages = {
   "viewer.status.empty": "No thumbnails available yet.",
   "viewer.status.loadFailed": "Could not load thumbnails.",
   "viewer.grid.thumbnailAlt": "Thumbnail {id}",
+  "viewer.grid.openMedia": "Open media {id}",
+  "viewer.modal.title": "Media viewer",
+  "viewer.modal.close": "Close viewer",
+  "viewer.modal.previous": "Previous media",
+  "viewer.modal.next": "Next media",
+  "viewer.modal.counter": "{current} / {total}",
+  "viewer.modal.imageAlt": "Media {id}",
 } as const;
 
 export type TranslationKey = keyof typeof enMessages;
@@ -194,6 +201,13 @@ const deMessages: Record<TranslationKey, string> = {
   "viewer.status.empty": "Noch keine Vorschaubilder verfügbar.",
   "viewer.status.loadFailed": "Vorschaubilder konnten nicht geladen werden.",
   "viewer.grid.thumbnailAlt": "Vorschaubild {id}",
+  "viewer.grid.openMedia": "Medium {id} öffnen",
+  "viewer.modal.title": "Medienanzeige",
+  "viewer.modal.close": "Anzeige schließen",
+  "viewer.modal.previous": "Vorheriges Medium",
+  "viewer.modal.next": "Nächstes Medium",
+  "viewer.modal.counter": "{current} / {total}",
+  "viewer.modal.imageAlt": "Medium {id}",
 };
 
 type TranslationDictionary = Record<TranslationKey, string>;

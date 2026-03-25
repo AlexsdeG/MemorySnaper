@@ -1,5 +1,5 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   Card,
@@ -9,31 +9,38 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Grid } from "@/features/viewer/components/Grid";
+import { MediaViewerModal } from "@/features/viewer/components/MediaViewerModal";
 import { useI18n } from "@/lib/i18n";
-import { getThumbnails } from "@/lib/memories-api";
+import { getViewerItems, type ViewerMediaKind } from "@/lib/memories-api";
 
 type GridItem = {
   id: string;
-  src?: string;
+  thumbnailSrc: string;
+  mediaSrc: string;
+  mediaKind: ViewerMediaKind;
 };
 
 export function ViewerPlaceholder() {
   const { t } = useI18n();
   const [items, setItems] = useState<GridItem[]>([]);
   const [status, setStatus] = useState(t("viewer.status.loading"));
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
   useEffect(() => {
-    const loadThumbnails = async () => {
+    const loadViewerItems = async () => {
       try {
-        const thumbnailRows = await getThumbnails(0, 5000);
-        const mappedItems = thumbnailRows.map((row) => ({
+        const viewerRows = await getViewerItems(0, 5000);
+        const mappedItems = viewerRows.map((row) => ({
           id: String(row.memoryItemId),
-          src: convertFileSrc(row.thumbnailPath, "asset"),
+          thumbnailSrc: convertFileSrc(row.thumbnailPath, "asset"),
+          mediaSrc: convertFileSrc(row.mediaPath, "asset"),
+          mediaKind: row.mediaKind,
         }));
 
-        console.log("[viewer] Loaded thumbnail rows", {
-          count: thumbnailRows.length,
-          sample: thumbnailRows.slice(0, 3),
+        console.log("[viewer] Loaded viewer rows", {
+          count: viewerRows.length,
+          sample: viewerRows.slice(0, 3),
         });
 
         setItems(mappedItems);
@@ -47,8 +54,100 @@ export function ViewerPlaceholder() {
       }
     };
 
-    void loadThumbnails();
+    void loadViewerItems();
   }, [t]);
+
+  const closeModal = () => {
+    const selectedItemId = selectedIndex !== null ? items[selectedIndex]?.id : undefined;
+    setIsModalOpen(false);
+
+    if (!selectedItemId) {
+      return;
+    }
+
+    window.setTimeout(() => {
+      const thumbnailButton = document.getElementById(`viewer-thumb-${selectedItemId}`);
+      thumbnailButton?.focus();
+    }, 0);
+  };
+
+  const openModalAt = (index: number) => {
+    if (index < 0 || index >= items.length) {
+      return;
+    }
+
+    setSelectedIndex(index);
+    setIsModalOpen(true);
+  };
+
+  const goPrevious = () => {
+    setSelectedIndex((index) => {
+      if (index === null || index <= 0) {
+        return index;
+      }
+      return index - 1;
+    });
+  };
+
+  const goNext = () => {
+    setSelectedIndex((index) => {
+      if (index === null || index >= items.length - 1) {
+        return index;
+      }
+      return index + 1;
+    });
+  };
+
+  useEffect(() => {
+    if (!isModalOpen) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeModal();
+        return;
+      }
+
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        goPrevious();
+        return;
+      }
+
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        goNext();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isModalOpen, items.length, selectedIndex]);
+
+  const gridItems = useMemo(
+    () => items.map((item) => ({ id: item.id, src: item.thumbnailSrc })),
+    [items],
+  );
+
+  const currentIndex = selectedIndex ?? -1;
+  const modalItems = useMemo(
+    () =>
+      items.map((item) => ({
+        id: item.id,
+        mediaSrc: item.mediaSrc,
+        mediaKind: item.mediaKind,
+      })),
+    [items],
+  );
 
   return (
     <Card className="mx-auto flex h-full w-full flex-col">
@@ -60,8 +159,17 @@ export function ViewerPlaceholder() {
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col space-y-3">
         <p className="text-sm text-muted-foreground">{status}</p>
-        <Grid items={items} />
+        <Grid items={gridItems} onItemSelect={openModalAt} />
       </CardContent>
+
+      <MediaViewerModal
+        open={isModalOpen}
+        items={modalItems}
+        currentIndex={currentIndex}
+        onClose={closeModal}
+        onPrevious={goPrevious}
+        onNext={goNext}
+      />
     </Card>
   );
 }

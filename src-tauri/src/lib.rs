@@ -97,6 +97,23 @@ struct ThumbnailItem {
     thumbnail_path: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ViewerItem {
+    memory_item_id: i64,
+    date_taken: String,
+    thumbnail_path: String,
+    media_path: String,
+    media_kind: ViewerMediaKind,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum ViewerMediaKind {
+    Image,
+    Video,
+}
+
 fn emit_session_log(window: &tauri::Window, message: impl Into<String>) -> Result<(), String> {
     window
         .emit(
@@ -1328,6 +1345,88 @@ async fn get_thumbnails(
 }
 
 #[tauri::command]
+async fn get_viewer_items(
+    app: tauri::AppHandle,
+    offset: i64,
+    limit: i64,
+) -> Result<Vec<ViewerItem>, String> {
+    if offset < 0 {
+        return Err("offset must be greater than or equal to 0".to_string());
+    }
+
+    if limit <= 0 {
+        return Err("limit must be greater than 0".to_string());
+    }
+
+    let database_url = memories_db_url(&app)?;
+    let pool = sqlx::SqlitePool::connect(&database_url)
+        .await
+        .map_err(|error| format!("failed to connect to memories database: {error}"))?;
+
+    let rows = sqlx::query(
+        "
+        SELECT id, date
+        FROM MemoryItem
+        WHERE status = 'processed'
+        ORDER BY id DESC
+        LIMIT ?1 OFFSET ?2
+        ",
+    )
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&pool)
+    .await
+    .map_err(|error| format!("failed to query processed memories for viewer items: {error}"))?;
+
+    pool.close().await;
+
+    let output_dir = resolve_output_dir(&app, ".raw_cache")?;
+    let thumbnails_dir = output_dir.join(".thumbnails");
+
+    let items = rows
+        .into_iter()
+        .filter_map(|row| {
+            let memory_item_id = row.get::<i64, _>("id");
+            let date_taken = row.get::<String, _>("date");
+
+            let thumbnail_path = thumbnails_dir.join(format!("{memory_item_id}.webp"));
+            if !thumbnail_path.exists() {
+                return None;
+            }
+
+            let media_path = match find_output_file_for_memory_item_recursive(&output_dir, memory_item_id)
+            {
+                Ok(path) => path,
+                Err(error) => {
+                    eprintln!(
+                        "[viewer] failed to locate media path for memory item {}: {}",
+                        memory_item_id,
+                        error
+                    );
+                    None
+                }
+            }?;
+
+            let media_kind = viewer_media_kind_from_path(&media_path)?;
+
+            let resolved_thumbnail_path = std::fs::canonicalize(&thumbnail_path)
+                .unwrap_or(thumbnail_path);
+            let resolved_media_path = std::fs::canonicalize(&media_path).unwrap_or(media_path);
+
+            Some(ViewerItem {
+                memory_item_id,
+                date_taken,
+                thumbnail_path: resolved_thumbnail_path.to_string_lossy().to_string(),
+                media_path: resolved_media_path.to_string_lossy().to_string(),
+                media_kind,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    Ok(items)
+}
+
+#[tauri::command]
 async fn reset_all_app_data(app: tauri::AppHandle) -> Result<(), String> {
     let database_url = memories_db_url(&app)?;
     let pool = sqlx::SqlitePool::connect(&database_url)
@@ -2313,6 +2412,73 @@ fn find_output_file_for_memory_item(
     Ok(None)
 }
 
+fn find_output_file_for_memory_item_recursive(
+    output_dir: &std::path::Path,
+    memory_item_id: i64,
+) -> Result<Option<std::path::PathBuf>, std::io::Error> {
+    if !output_dir.exists() {
+        return Ok(None);
+    }
+
+    let target_stem = memory_item_id.to_string();
+    let mut dir_stack = vec![output_dir.to_path_buf()];
+
+    while let Some(current_dir) = dir_stack.pop() {
+        for entry in std::fs::read_dir(&current_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.is_dir() {
+                let should_skip_dir = path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name == ".thumbnails" || name == ".staging");
+
+                if !should_skip_dir {
+                    dir_stack.push(path);
+                }
+
+                continue;
+            }
+
+            let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+                continue;
+            };
+
+            if stem != target_stem {
+                continue;
+            }
+
+            let Some(extension) = path.extension().and_then(|value| value.to_str()) else {
+                continue;
+            };
+
+            let normalized_extension = extension.to_ascii_lowercase();
+            if matches!(normalized_extension.as_str(), "webp" | "png") {
+                continue;
+            }
+
+            return Ok(Some(path));
+        }
+    }
+
+    Ok(None)
+}
+
+fn viewer_media_kind_from_path(path: &std::path::Path) -> Option<ViewerMediaKind> {
+    let extension = path.extension()?.to_string_lossy().to_ascii_lowercase();
+
+    if matches!(extension.as_str(), "mp4" | "mov" | "m4v" | "webm") {
+        return Some(ViewerMediaKind::Video);
+    }
+
+    if matches!(extension.as_str(), "jpg" | "jpeg" | "png" | "webp") {
+        return Some(ViewerMediaKind::Image);
+    }
+
+    None
+}
+
 fn find_overlay_file_for_memory_item(
     output_dir: &std::path::Path,
     memory_item_id: i64,
@@ -2415,6 +2581,7 @@ pub fn run() {
             process_memories_from_zip_archives,
             process_downloaded_memories,
             get_thumbnails,
+            get_viewer_items,
             reset_all_app_data
         ])
         .run(tauri::generate_context!())
