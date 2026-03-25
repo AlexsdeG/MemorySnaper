@@ -9,7 +9,7 @@ import {
   Maximize,
   Minimize,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
@@ -288,6 +288,27 @@ export function MediaViewerModal({
   const isFirst = currentIndex === 0;
   const isLast = currentIndex === items.length - 1;
   const currentRotation = rotationByItem[item.id] ?? 0;
+  const isQuarterTurn = currentRotation % 180 !== 0;
+  const fullscreenInset = "5rem";
+
+  const mediaStyle: CSSProperties = {
+    transform: `rotate(${currentRotation}deg)`,
+    transformOrigin: "center center",
+    maxWidth: isFullscreen
+      ? isQuarterTurn
+        ? `calc(100dvh - ${fullscreenInset})`
+        : `calc(100dvw - ${fullscreenInset})`
+      : isQuarterTurn
+        ? "calc(100dvh - 10rem)"
+        : "100%",
+    maxHeight: isFullscreen
+      ? isQuarterTurn
+        ? `calc(100dvw - ${fullscreenInset})`
+        : `calc(100dvh - ${fullscreenInset})`
+      : isQuarterTurn
+        ? "calc(100dvw - 7rem)"
+        : "100%",
+  };
 
   const rotateCurrentLeft = () => {
     setRotationByItem((previous) => ({
@@ -457,7 +478,7 @@ export function MediaViewerModal({
 
           <div
             ref={mediaContainerRef}
-            className={`relative flex h-full w-full items-center justify-center ${
+            className={`relative flex h-full w-full items-center justify-center overflow-hidden ${
               isFullscreen ? "bg-black" : "bg-transparent"
             }`}
           >
@@ -554,8 +575,8 @@ export function MediaViewerModal({
                 <video
                   ref={videoRef}
                   key={videoObjectUrl ?? item.mediaSrc}
-                  className="max-h-full max-w-full rounded-lg object-contain"
-                  style={{ transform: `rotate(${currentRotation}deg)` }}
+                  className="h-auto max-h-full w-auto max-w-full rounded-lg object-contain"
+                  style={mediaStyle}
                   controls
                   autoPlay
                   muted={!isSoundEnabled}
@@ -584,8 +605,8 @@ export function MediaViewerModal({
               <img
                 src={item.mediaSrc}
                 alt={t("viewer.modal.imageAlt", { id: item.id })}
-                className="max-h-full max-w-full rounded-lg object-contain"
-                style={{ transform: `rotate(${currentRotation}deg)` }}
+                className="h-auto max-h-full w-auto max-w-full rounded-lg object-contain"
+                style={mediaStyle}
               />
             )}
           </div>
