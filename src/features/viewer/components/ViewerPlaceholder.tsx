@@ -18,6 +18,8 @@ type GridItem = {
   thumbnailSrc: string;
   mediaSrc: string;
   mediaKind: ViewerMediaKind;
+  dateTaken: string;
+  location?: string;
 };
 
 export function ViewerPlaceholder() {
@@ -36,6 +38,8 @@ export function ViewerPlaceholder() {
           thumbnailSrc: convertFileSrc(row.thumbnailPath, "asset"),
           mediaSrc: convertFileSrc(row.mediaPath, "asset"),
           mediaKind: row.mediaKind,
+          dateTaken: row.dateTaken,
+          location: row.location ?? undefined,
         }));
 
         console.log("[viewer] Loaded viewer rows", {
@@ -138,7 +142,14 @@ export function ViewerPlaceholder() {
   }, [isModalOpen, items.length, selectedIndex]);
 
   const gridItems = useMemo(
-    () => items.map((item) => ({ id: item.id, src: item.thumbnailSrc })),
+    () =>
+      items.map((item) => ({
+        id: item.id,
+        src: item.thumbnailSrc,
+        dateTaken: item.dateTaken,
+        mediaKind: item.mediaKind,
+        location: item.location,
+      })),
     [items],
   );
 
@@ -149,6 +160,8 @@ export function ViewerPlaceholder() {
         id: item.id,
         mediaSrc: item.mediaSrc,
         mediaKind: item.mediaKind,
+        dateTaken: item.dateTaken,
+        location: item.location,
       })),
     [items],
   );

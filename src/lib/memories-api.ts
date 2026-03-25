@@ -61,6 +61,7 @@ export type ViewerMediaKind = "image" | "video";
 export type ViewerItem = {
   memoryItemId: number;
   dateTaken: string;
+  location?: string;
   thumbnailPath: string;
   mediaPath: string;
   mediaKind: ViewerMediaKind;

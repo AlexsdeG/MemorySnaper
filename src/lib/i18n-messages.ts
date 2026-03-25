@@ -112,6 +112,20 @@ const enMessages = {
   "viewer.modal.videoLoading": "Loading video...",
   "viewer.modal.videoUnsupported":
     "Video playback failed in the embedded viewer. On Linux, install system GStreamer codecs (for example: gstreamer1.0-libav, gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad, gstreamer1.0-plugins-ugly), then restart the app.",
+  "viewer.modal.showMetadata": "Show metadata",
+  "viewer.grid.tooltip.date": "Date",
+  "viewer.grid.tooltip.type": "Type",
+  "viewer.grid.tooltip.location": "Location",
+  "viewer.metadata.title": "Media Info",
+  "viewer.metadata.id": "ID",
+  "viewer.metadata.type": "Type",
+  "viewer.metadata.type.image": "Photo",
+  "viewer.metadata.type.video": "Video",
+  "viewer.metadata.date": "Date",
+  "viewer.metadata.time": "Time",
+  "viewer.metadata.location": "Location",
+  "viewer.metadata.noLocation": "—",
+  "viewer.metadata.close": "Close",
 } as const;
 
 export type TranslationKey = keyof typeof enMessages;
@@ -234,6 +248,20 @@ const deMessages: Record<TranslationKey, string> = {
   "viewer.modal.videoLoading": "Video wird geladen...",
   "viewer.modal.videoUnsupported":
     "Die Videowiedergabe in der eingebetteten Anzeige ist fehlgeschlagen. Unter Linux bitte die systemweiten GStreamer-Codecs installieren (z. B. gstreamer1.0-libav, gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad, gstreamer1.0-plugins-ugly) und die App neu starten.",
+  "viewer.modal.showMetadata": "Metadaten anzeigen",
+  "viewer.grid.tooltip.date": "Datum",
+  "viewer.grid.tooltip.type": "Typ",
+  "viewer.grid.tooltip.location": "Ort",
+  "viewer.metadata.title": "Medieninfo",
+  "viewer.metadata.id": "ID",
+  "viewer.metadata.type": "Typ",
+  "viewer.metadata.type.image": "Foto",
+  "viewer.metadata.type.video": "Video",
+  "viewer.metadata.date": "Datum",
+  "viewer.metadata.time": "Uhrzeit",
+  "viewer.metadata.location": "Ort",
+  "viewer.metadata.noLocation": "—",
+  "viewer.metadata.close": "Schließen",
 };
 
 type TranslationDictionary = Record<TranslationKey, string>;

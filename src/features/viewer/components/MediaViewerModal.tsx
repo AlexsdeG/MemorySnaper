@@ -8,17 +8,21 @@ import {
   VolumeX,
   Maximize,
   Minimize,
+  Info,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
 import type { ViewerMediaKind } from "@/lib/memories-api";
+import { MediaMetadataModal } from "@/features/viewer/components/MediaMetadataModal";
 
 type MediaViewerModalItem = {
   id: string;
   mediaSrc: string;
   mediaKind: ViewerMediaKind;
+  dateTaken: string;
+  location?: string;
 };
 
 type MediaViewerModalProps = {
@@ -45,6 +49,7 @@ export function MediaViewerModal({
   const [isSoundEnabled, setIsSoundEnabled] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [rotationByItem, setRotationByItem] = useState<Record<string, number>>({});
+  const [isMetadataOpen, setIsMetadataOpen] = useState(false);
   const mediaContainerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -78,6 +83,7 @@ export function MediaViewerModal({
 
   useEffect(() => {
     setVideoLoadError(false);
+    setIsMetadataOpen(false);
   }, [item?.id, item?.mediaSrc, item?.mediaKind]);
 
   useEffect(() => {
@@ -371,8 +377,9 @@ export function MediaViewerModal({
   };
 
   return (
+    <>
     <div
-      className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-sm"
+      className="fixed inset-0 z-100 bg-black/85 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-label={t("viewer.modal.title")}
@@ -442,6 +449,17 @@ export function MediaViewerModal({
             >
               {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
             </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-9 w-9 border-white/20 bg-black/30 text-white hover:bg-black/50"
+                onClick={() => setIsMetadataOpen(true)}
+                aria-label={t("viewer.modal.showMetadata")}
+              >
+                <Info className="h-4 w-4" />
+              </Button>
 
             <Button
               type="button"
@@ -556,6 +574,17 @@ export function MediaViewerModal({
                   variant="outline"
                   size="icon"
                   className="h-10 w-10 border-white/20 bg-black/40 text-white hover:bg-black/60"
+                  onClick={() => setIsMetadataOpen(true)}
+                  aria-label={t("viewer.modal.showMetadata")}
+                >
+                  <Info className="h-4 w-4" />
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10 border-white/20 bg-black/40 text-white hover:bg-black/60"
                   onClick={() => {
                     void exitFullscreen();
                   }}
@@ -625,5 +654,17 @@ export function MediaViewerModal({
         </div>
       </div>
     </div>
+
+    <MediaMetadataModal
+      open={isMetadataOpen}
+      onClose={() => setIsMetadataOpen(false)}
+      item={{
+        id: item.id,
+        dateTaken: item.dateTaken,
+        mediaKind: item.mediaKind,
+        location: item.location,
+      }}
+    />
+    </>
   );
 }

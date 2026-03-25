@@ -102,6 +102,7 @@ struct ThumbnailItem {
 struct ViewerItem {
     memory_item_id: i64,
     date_taken: String,
+    location: Option<String>,
     thumbnail_path: String,
     media_path: String,
     media_kind: ViewerMediaKind,
@@ -1365,7 +1366,7 @@ async fn get_viewer_items(
 
     let rows = sqlx::query(
         "
-        SELECT id, date
+        SELECT id, date, location
         FROM MemoryItem
         WHERE status = 'processed'
         ORDER BY id DESC
@@ -1388,6 +1389,7 @@ async fn get_viewer_items(
         .filter_map(|row| {
             let memory_item_id = row.get::<i64, _>("id");
             let date_taken = row.get::<String, _>("date");
+            let location: Option<String> = row.try_get("location").ok().flatten();
 
             let thumbnail_path = thumbnails_dir.join(format!("{memory_item_id}.webp"));
             if !thumbnail_path.exists() {
@@ -1416,6 +1418,7 @@ async fn get_viewer_items(
             Some(ViewerItem {
                 memory_item_id,
                 date_taken,
+                location,
                 thumbnail_path: resolved_thumbnail_path.to_string_lossy().to_string(),
                 media_path: resolved_media_path.to_string_lossy().to_string(),
                 media_kind,
