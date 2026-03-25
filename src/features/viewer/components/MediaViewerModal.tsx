@@ -1,4 +1,4 @@
-import { X, ChevronLeft, ChevronRight, RotateCcw, RotateCw } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, RotateCcw, RotateCw, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,7 @@ export function MediaViewerModal({
   const [videoLoadError, setVideoLoadError] = useState(false);
   const [videoObjectUrl, setVideoObjectUrl] = useState<string | null>(null);
   const [isVideoLoading, setIsVideoLoading] = useState(false);
+  const [isSoundEnabled, setIsSoundEnabled] = useState(false);
   const [rotationByItem, setRotationByItem] = useState<Record<string, number>>({});
 
   const item =
@@ -42,6 +43,12 @@ export function MediaViewerModal({
   useEffect(() => {
     setVideoLoadError(false);
   }, [item?.id, item?.mediaSrc, item?.mediaKind]);
+
+  useEffect(() => {
+    if (!open) {
+      setIsSoundEnabled(false);
+    }
+  }, [open]);
 
   const videoMimeType = useMemo(() => {
     if (!item) {
@@ -191,6 +198,27 @@ export function MediaViewerModal({
             })}
           </p>
           <div className="flex items-center gap-2">
+            {item.mediaKind === "video" ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-9 w-9 border-white/20 bg-black/30 text-white hover:bg-black/50"
+                onClick={() => setIsSoundEnabled((previous) => !previous)}
+                aria-label={
+                  isSoundEnabled
+                    ? t("viewer.modal.soundDisable")
+                    : t("viewer.modal.soundEnable")
+                }
+              >
+                {isSoundEnabled ? (
+                  <Volume2 className="h-4 w-4" />
+                ) : (
+                  <VolumeX className="h-4 w-4" />
+                )}
+              </Button>
+            ) : null}
+
             <Button
               type="button"
               variant="outline"
@@ -252,9 +280,14 @@ export function MediaViewerModal({
                   style={{ transform: `rotate(${currentRotation}deg)` }}
                   controls
                   autoPlay
-                  muted
+                  muted={!isSoundEnabled}
                   playsInline
                   preload="metadata"
+                  onVolumeChange={(event) => {
+                    const target = event.currentTarget;
+                    const hasSound = !target.muted && target.volume > 0;
+                    setIsSoundEnabled(hasSound);
+                  }}
                   onError={() => {
                     setVideoLoadError(true);
                     setIsVideoLoading(false);
