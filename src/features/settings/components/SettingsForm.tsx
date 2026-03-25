@@ -3,9 +3,11 @@ import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import {
   clearPersistedAppClientState,
+  parseStartupPagePreference,
   parseThemePreference,
   readAppSettings,
   writeAppSettings,
+  type StartupPagePreference,
   type ThemePreference,
 } from "@/lib/app-settings";
 import { parseLanguagePreference, type LanguagePreference } from "@/lib/language";
@@ -14,6 +16,8 @@ import { resetAllAppData } from "@/lib/memories-api";
 
 const REQUESTS_WARNING_THRESHOLD = 100;
 const CONCURRENCY_WARNING_THRESHOLD = 5;
+
+const startupPageOptions: StartupPagePreference[] = ["system", "downloader", "viewer"];
 
 function clampNonNegativeInteger(value: string): number {
   const parsedValue = Number.parseInt(value, 10);
@@ -40,6 +44,7 @@ export function SettingsForm() {
   const { languagePreference, resolvedLocale, setLanguagePreference, t } = useI18n();
   const [requestsPerMinute, setRequestsPerMinute] = useState<number>(10);
   const [concurrentDownloads, setConcurrentDownloads] = useState<number>(3);
+  const [startupPagePreference, setStartupPagePreference] = useState<StartupPagePreference>("system");
   const [hasLoadedSettings, setHasLoadedSettings] = useState(false);
   const [isResettingAllData, setIsResettingAllData] = useState(false);
   const [resetErrorMessage, setResetErrorMessage] = useState<string | null>(null);
@@ -48,6 +53,7 @@ export function SettingsForm() {
     const settings = readAppSettings();
     setRequestsPerMinute(settings.requestsPerMinute);
     setConcurrentDownloads(settings.concurrentDownloads);
+    setStartupPagePreference(settings.startupPagePreference);
     setHasLoadedSettings(true);
   }, []);
 
@@ -61,12 +67,14 @@ export function SettingsForm() {
       concurrentDownloads,
       languagePreference,
       themePreference: resolveThemePreference(theme),
+      startupPagePreference,
     });
   }, [
     concurrentDownloads,
     hasLoadedSettings,
     languagePreference,
     requestsPerMinute,
+    startupPagePreference,
     theme,
   ]);
 
@@ -87,6 +95,10 @@ export function SettingsForm() {
 
   const onLanguagePreferenceChange = (event: ChangeEvent<HTMLSelectElement>) => {
     setLanguagePreference(parseLanguagePreference(event.target.value));
+  };
+
+  const onStartupPagePreferenceChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    setStartupPagePreference(parseStartupPagePreference(event.target.value));
   };
 
   const onResetAllData = async () => {
@@ -160,6 +172,28 @@ export function SettingsForm() {
             {t("settings.form.language.detected", { locale: resolvedLocale.toUpperCase() })}
           </p>
         ) : null}
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="startup-page-preference" className="text-sm font-medium">
+          {t("settings.form.startupPage")}
+        </label>
+        <select
+          id="startup-page-preference"
+          value={startupPagePreference}
+          onChange={onStartupPagePreferenceChange}
+          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+        >
+          {startupPageOptions.map((option) => (
+            <option key={option} value={option}>
+              {option === "system"
+                ? t("settings.form.startupPage.system")
+                : option === "downloader"
+                  ? t("settings.form.startupPage.downloader")
+                  : t("settings.form.startupPage.viewer")}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="space-y-2">

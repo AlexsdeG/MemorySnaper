@@ -32,6 +32,10 @@ const enMessages = {
   "settings.form.reset.confirm":
     "This will permanently delete all app-managed media data and reset the local database. Continue?",
   "settings.form.reset.error": "Reset failed. Please try again.",
+  "settings.form.startupPage": "Startup page",
+  "settings.form.startupPage.system": "System (dynamic)",
+  "settings.form.startupPage.downloader": "Downloader",
+  "settings.form.startupPage.viewer": "Viewer",
 
   "downloader.card.title": "Downloader",
   "downloader.card.description": "Import Snapchat export data and download queued memories.",
@@ -145,6 +149,10 @@ const deMessages: Record<TranslationKey, string> = {
   "settings.form.reset.confirm":
     "Dadurch werden alle App-verwalteten Mediendaten dauerhaft gelöscht und die lokale Datenbank zurückgesetzt. Fortfahren?",
   "settings.form.reset.error": "Zurücksetzen fehlgeschlagen. Bitte erneut versuchen.",
+  "settings.form.startupPage": "Startseite",
+  "settings.form.startupPage.system": "System (dynamisch)",
+  "settings.form.startupPage.downloader": "Downloader",
+  "settings.form.startupPage.viewer": "Betrachter",
 
   "downloader.card.title": "Downloader",
   "downloader.card.description":

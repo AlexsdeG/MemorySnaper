@@ -5,12 +5,14 @@ export const THEME_STORAGE_KEY = "memorysnaper-theme";
 export const DOWNLOADER_SESSION_STORAGE_KEY = "memorysnaper.downloader-session.v1";
 
 export type ThemePreference = "light" | "dark" | "system";
+export type StartupPagePreference = "system" | "downloader" | "viewer";
 
 export type AppSettings = {
   requestsPerMinute: number;
   concurrentDownloads: number;
   languagePreference: LanguagePreference;
   themePreference: ThemePreference;
+  startupPagePreference: StartupPagePreference;
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -18,7 +20,16 @@ const DEFAULT_SETTINGS: AppSettings = {
   concurrentDownloads: 3,
   languagePreference: "system",
   themePreference: "system",
+  startupPagePreference: "system",
 };
+
+export function parseStartupPagePreference(value: string | null): StartupPagePreference {
+  if (value === "system" || value === "downloader" || value === "viewer") {
+    return value;
+  }
+
+  return "system";
+}
 
 export function parseThemePreference(value: string | null): ThemePreference {
   if (value === "light" || value === "dark" || value === "system") {
@@ -61,12 +72,18 @@ function parseSettings(rawValue: string): AppSettings | null {
         ? (Reflect.get(parsedValue, "themePreference") as string)
         : null,
     );
+    const startupPagePreference = parseStartupPagePreference(
+      typeof Reflect.get(parsedValue, "startupPagePreference") === "string"
+        ? (Reflect.get(parsedValue, "startupPagePreference") as string)
+        : null,
+    );
 
     return {
       requestsPerMinute,
       concurrentDownloads,
       languagePreference,
       themePreference,
+      startupPagePreference,
     };
   } catch {
     return null;

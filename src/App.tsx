@@ -1,16 +1,38 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { DownloaderPlaceholder } from "@/features/downloader/components/DownloaderPlaceholder";
 import { SettingsPlaceholder } from "@/features/settings/components/SettingsPlaceholder";
 import { ViewerPlaceholder } from "@/features/viewer/components/ViewerPlaceholder";
+import { readAppSettings } from "@/lib/app-settings";
 import { useI18n } from "@/lib/i18n";
+import { getViewerItems } from "@/lib/memories-api";
 
 type TabKey = "downloader" | "viewer" | "settings";
 
 function App() {
-  const [activeTab, setActiveTab] = useState<TabKey>("downloader");
+  const [activeTab, setActiveTab] = useState<TabKey | null>(null);
   const { t } = useI18n();
+
+  useEffect(() => {
+    const settings = readAppSettings();
+    if (settings.startupPagePreference === "downloader") {
+      setActiveTab("downloader");
+      return;
+    }
+    if (settings.startupPagePreference === "viewer") {
+      setActiveTab("viewer");
+      return;
+    }
+    // system: open viewer if media exists, otherwise downloader
+    getViewerItems(0, 1)
+      .then((items) => {
+        setActiveTab(items.length > 0 ? "viewer" : "downloader");
+      })
+      .catch(() => {
+        setActiveTab("downloader");
+      });
+  }, []);
 
   const tabs = useMemo<Array<{ key: TabKey; label: string }>>(
     () => [
@@ -39,12 +61,13 @@ function App() {
           component: <SettingsPlaceholder />,
         };
       default:
-        return {
-          title: t("app.section.downloader"),
-          component: <DownloaderPlaceholder />,
-        };
+        return null;
     }
   }, [activeTab, t]);
+
+  if (activeTab === null || tabContent === null) {
+    return <div className="flex h-screen w-full items-center justify-center bg-background" />;
+  }
 
   return (
     <div className="flex h-screen w-full flex-col bg-background text-foreground">
