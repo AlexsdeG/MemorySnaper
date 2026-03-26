@@ -329,7 +329,7 @@ export function Workflow() {
           status: payload.status,
           errorCode: payload.errorCode,
         });
-
+        setTotalFiles((previous) => Math.max(previous, payload.totalFiles));
         setProcessedFiles(payload.successfulFiles);
 
         if (payload.status === "duplicate") {
@@ -545,8 +545,10 @@ export function Workflow() {
       setNotice("Importing memories history from main ZIP...", "success");
 
       const summary = await importMemoriesFromZip(mainZip.path);
+      setTotalFiles(summary.parsedCount);
+      setDownloadedFiles(0);
       pushLogLine(
-        `[${new Date().toISOString().slice(0, 10)}] Imported ${summary.importedCount} records (${summary.skippedDuplicates} duplicates skipped on import)`,
+        `[${new Date().toISOString().slice(0, 10)}] Loaded ${summary.parsedCount} memories from memories_history.json; imported ${summary.importedCount} records (${summary.skippedDuplicates} duplicates skipped on import)`,
       );
 
       const rateLimitSettings = loadRateLimitSettings();
