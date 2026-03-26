@@ -4,6 +4,8 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
+
+use super::geocoder;
 use sha2::{Digest, Sha256};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -185,7 +187,9 @@ impl From<sqlx::Error> for ParserError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ParsedMemoryItem {
     date: String,
+    date_time: Option<String>,
     location: Option<String>,
+    location_resolved: Option<String>,
     media_type: String,
     media_url: String,
     overlay_url: Option<String>,
@@ -316,8 +320,8 @@ pub async fn import_memories_history_json(
 
         sqlx::query(
             "
-            INSERT INTO MemoryItem (date, location, media_url, overlay_url, status)
-            VALUES (?1, ?2, ?3, ?4, ?5)
+            INSERT INTO MemoryItem (date, location, media_url, overlay_url, status, date_time, location_resolved)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             ",
         )
         .bind(&item.date)
@@ -325,6 +329,8 @@ pub async fn import_memories_history_json(
         .bind(&item.media_url)
         .bind(&item.overlay_url)
         .bind("queued")
+        .bind(&item.date_time)
+        .bind(&item.location_resolved)
         .execute(&mut *transaction)
         .await?;
 
@@ -563,11 +569,15 @@ fn parse_memory_item(value: &Value) -> Option<ParsedMemoryItem> {
     .unwrap_or_else(|| "unknown".to_string());
 
     let location = parse_location(value);
+    let date_time = extract_full_datetime(&date);
+    let location_resolved = location.as_deref().and_then(geocoder::resolve_location);
     let media_type = infer_media_type(&media_url).to_string();
 
     Some(ParsedMemoryItem {
         date,
+        date_time,
         location,
+        location_resolved,
         media_type,
         media_url,
         overlay_url,
@@ -614,6 +624,39 @@ fn build_memory_hash(
     format!("{:x}", hasher.finalize())
 }
 
+const DATETIME_FORMATS: [&str; 6] = [
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%d %H:%M:%S%.f",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%dT%H:%M:%S%.f",
+    "%Y-%m-%d %H:%M",
+    "%Y-%m-%dT%H:%M",
+];
+
+/// Extract a full UTC datetime ("YYYY-MM-DD HH:MM:SS") from a raw Snapchat date string.
+/// Handles the " UTC" suffix and common ISO variants.
+pub fn extract_full_datetime(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if let Ok(parsed) = DateTime::parse_from_rfc3339(trimmed) {
+        return Some(parsed.naive_utc().format("%Y-%m-%d %H:%M:%S").to_string());
+    }
+
+    // Strip the " UTC" suffix Snapchat appends (e.g. "2024-05-01 12:00:00 UTC")
+    let s = trimmed.strip_suffix(" UTC").unwrap_or(trimmed);
+
+    for format in DATETIME_FORMATS {
+        if let Ok(parsed) = NaiveDateTime::parse_from_str(s, format) {
+            return Some(parsed.format("%Y-%m-%d %H:%M:%S").to_string());
+        }
+    }
+
+    None
+}
+
 fn normalize_date_component(raw_date: &str) -> String {
     let trimmed = raw_date.trim();
     if trimmed.is_empty() {
@@ -624,16 +667,7 @@ fn normalize_date_component(raw_date: &str) -> String {
         return parsed.date_naive().format("%Y-%m-%d").to_string();
     }
 
-    const DATE_TIME_FORMATS: [&str; 6] = [
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d %H:%M:%S%.f",
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%dT%H:%M:%S%.f",
-        "%Y-%m-%d %H:%M",
-        "%Y-%m-%dT%H:%M",
-    ];
-
-    for format in DATE_TIME_FORMATS {
+    for format in DATETIME_FORMATS {
         if let Ok(parsed) = NaiveDateTime::parse_from_str(trimmed, format) {
             return parsed.date().format("%Y-%m-%d").to_string();
         }

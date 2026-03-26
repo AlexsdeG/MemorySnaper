@@ -386,6 +386,9 @@ async fn ensure_sqlite_column(
         ensure_sqlite_column(&pool, "Memories", "relative_path", "relative_path TEXT").await?;
         ensure_sqlite_column(&pool, "Memories", "thumbnail_path", "thumbnail_path TEXT").await?;
 
+        ensure_sqlite_column(&pool, "MemoryItem", "date_time", "date_time TEXT").await?;
+        ensure_sqlite_column(&pool, "MemoryItem", "location_resolved", "location_resolved TEXT").await?;
+
         sqlx::query(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_content_hash ON Memories(content_hash)",
         )
@@ -1366,7 +1369,9 @@ async fn get_viewer_items(
 
     let rows = sqlx::query(
         "
-        SELECT id, date, location
+        SELECT id,
+               COALESCE(date_time, date) AS date,
+               COALESCE(location_resolved, location) AS location
         FROM MemoryItem
         WHERE status = 'processed'
         ORDER BY id DESC
@@ -2549,6 +2554,62 @@ fn resolve_failed_memory_status(
     "failed"
 }
 
+async fn backfill_metadata(database_url: String) {
+    let pool = match sqlx::SqlitePool::connect(&database_url).await {
+        Ok(pool) => pool,
+        Err(error) => {
+            eprintln!("[backfill] failed to connect to database: {error}");
+            return;
+        }
+    };
+
+    // Warm up the geocoder in a blocking thread so the KD-tree build
+    // doesn't stall the async runtime on first call.
+    tokio::task::spawn_blocking(|| {
+        let _ = crate::core::geocoder::resolve_location("0,0");
+    })
+    .await
+    .ok();
+
+    let rows = match sqlx::query(
+        "SELECT id, date, location FROM MemoryItem
+         WHERE date_time IS NULL OR location_resolved IS NULL",
+    )
+    .fetch_all(&pool)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(error) => {
+            eprintln!("[backfill] failed to query MemoryItem: {error}");
+            return;
+        }
+    };
+
+    for row in rows {
+        let id: i64 = row.get("id");
+        let date: String = row.get("date");
+        let location: Option<String> = row.try_get("location").ok().flatten();
+
+        let date_time = crate::core::parser::extract_full_datetime(&date);
+        let location_resolved =
+            location.as_deref().and_then(crate::core::geocoder::resolve_location);
+
+        if let Err(error) = sqlx::query(
+            "UPDATE MemoryItem SET date_time = ?1, location_resolved = ?2 WHERE id = ?3",
+        )
+        .bind(&date_time)
+        .bind(&location_resolved)
+        .bind(id)
+        .execute(&pool)
+        .await
+        {
+            eprintln!("[backfill] failed to update item {id}: {error}");
+        }
+    }
+
+    pool.close().await;
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -2556,6 +2617,9 @@ pub fn run() {
         .setup(|app| {
             tauri::async_runtime::block_on(setup_database(app.handle()))
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
+            let database_url = memories_db_url(app.handle())
+                .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
+            tauri::async_runtime::spawn(backfill_metadata(database_url));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

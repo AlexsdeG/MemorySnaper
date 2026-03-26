@@ -32,6 +32,7 @@ sha2 = "0.10"
 blake3 = "1"
 url = "2"
 sys-locale = "0.3"
+reverse_geocoder = "3"
 
 [dev-dependencies]
 tempfile = "3"

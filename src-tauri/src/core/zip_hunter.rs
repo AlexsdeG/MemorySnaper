@@ -252,6 +252,7 @@ async fn update_failed_network_status(
     Ok(())
 }
 
+#[allow(clippy::type_complexity)]
 fn scan_zip_archives(
     zip_paths: &[PathBuf],
     date: &str,
@@ -343,6 +344,7 @@ fn match_memory_entry_kind(entry_name: &str, date: &str, mid: &str) -> Option<Me
     None
 }
 
+#[allow(clippy::type_complexity)]
 fn stage_matched_entries(
     zip_paths: &[PathBuf],
     main_entry: Option<&ZipArchiveEntry>,

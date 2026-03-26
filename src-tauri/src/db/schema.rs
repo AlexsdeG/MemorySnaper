@@ -106,5 +106,14 @@ pub fn sqlite_migrations() -> Vec<Migration> {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 9,
+            description: "add_memory_item_datetime_and_location_resolved",
+            sql: "
+                ALTER TABLE MemoryItem ADD COLUMN date_time TEXT;
+                ALTER TABLE MemoryItem ADD COLUMN location_resolved TEXT;
+            ",
+            kind: MigrationKind::Up,
+        },
     ]
 }
