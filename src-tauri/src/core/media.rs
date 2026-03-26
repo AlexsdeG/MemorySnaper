@@ -260,11 +260,11 @@ fn build_ffmpeg_overlay_args(
         MediaKind::Video => {
             args.push("-filter_complex".to_string());
             args.push(
-                "[1:v][0:v]scale2ref[ov][base];[base][ov]overlay=0:0:format=auto,format=yuv420p"
+                "[1:v][0:v]scale2ref[ov][base];[base][ov]overlay=0:0:format=auto,format=yuv420p[vout]"
                     .to_string(),
             );
             args.push("-map".to_string());
-            args.push("0:v".to_string());
+            args.push("[vout]".to_string());
             args.push("-map".to_string());
             args.push("0:a?".to_string());
             args.push("-c:a".to_string());

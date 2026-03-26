@@ -398,6 +398,12 @@ async fn generate_webp_thumbnail(
 ) -> Result<(), ProcessorError> {
     let media_path = media_path.to_path_buf();
     let thumbnail_path = thumbnail_path.to_path_buf();
+    let media_extension = media_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase())
+        .unwrap_or_default();
+    let is_video = is_video_extension(&media_extension);
 
     tokio::task::spawn_blocking(move || {
         if let Some(parent) = thumbnail_path.parent() {
@@ -410,17 +416,32 @@ async fn generate_webp_thumbnail(
             thumbnail_path.display()
         );
 
+        let media_path_arg = media_path.to_string_lossy().to_string();
+        let thumbnail_path_arg = thumbnail_path.to_string_lossy().to_string();
+        let mut args = vec!["-y".to_string(), "-i".to_string(), media_path_arg];
+
+        if is_video {
+            args.push("-map".to_string());
+            args.push("0:v:0".to_string());
+            args.push("-vf".to_string());
+            args.push(
+                "thumbnail,crop=iw-2:ih-2:1:1,scale=300:300:force_original_aspect_ratio=decrease:flags=lanczos"
+                    .to_string(),
+            );
+        } else {
+            args.push("-vf".to_string());
+            args.push(
+                "crop=iw-2:ih-2:1:1,scale=300:300:force_original_aspect_ratio=decrease:flags=lanczos"
+                    .to_string(),
+            );
+        }
+
+        args.push("-frames:v".to_string());
+        args.push("1".to_string());
+        args.push(thumbnail_path_arg);
+
         let output = Command::new("ffmpeg")
-            .args([
-                "-y",
-                "-i",
-                &media_path.to_string_lossy(),
-                "-vf",
-                "crop=iw-2:ih-2:1:1,scale=300:300:force_original_aspect_ratio=decrease:flags=lanczos",
-                "-frames:v",
-                "1",
-                &thumbnail_path.to_string_lossy(),
-            ])
+            .args(args)
             .output()
             .map_err(ProcessorError::Io)?;
 
