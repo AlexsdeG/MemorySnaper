@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useTheme } from "next-themes";
-import { save } from "@tauri-apps/plugin-dialog";
+import { confirm, save } from "@tauri-apps/plugin-dialog";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -250,7 +250,10 @@ export function SettingsForm() {
       return;
     }
 
-    const confirmed = window.confirm(t("settings.form.reset.confirm"));
+    const confirmed = await confirm(t("settings.form.reset.confirm"), {
+      title: t("settings.form.reset.confirmTitle"),
+      kind: "warning",
+    });
     if (!confirmed) {
       return;
     }
