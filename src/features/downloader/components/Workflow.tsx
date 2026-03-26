@@ -386,7 +386,8 @@ export function Workflow() {
   }, [processProgress?.completedFiles, processedFiles, totalFiles]);
 
   const isWorking = importState !== "idle";
-  const canStart = selectedZipPaths.length > 0 && !isWorking;
+  const canStart = selectedZipPaths.length > 0 && (!isWorking || isStopped);
+  const canPauseOrStop = isWorking && !isStopped;
 
   type ZipSelection = {
     uuid: string;
@@ -506,6 +507,7 @@ export function Workflow() {
     }
 
     try {
+      await resumeProcessingSession();
       setLogLines([]);
       setFinishedZipFiles([]);
       setDuplicatesSkipped(0);
@@ -584,6 +586,9 @@ export function Workflow() {
   };
 
   const onRemoveSelection = () => {
+    resumeProcessingSession().catch((error) => {
+      console.error("[downloader] Failed to reset backend processing state on clear", error);
+    });
     setSelectedZipPaths([]);
     setJobId(null);
     setActiveZip(null);
@@ -677,10 +682,10 @@ export function Workflow() {
           ) : null}
 
           <div className="flex gap-2">
-            <Button type="button" onClick={onStartSession} disabled={!canStart}>
+            <Button type="button" onClick={() => { void onStartSession(); }} disabled={!canStart}>
               Start Session
             </Button>
-            <Button type="button" variant="outline" onClick={onRemoveSelection} disabled={isWorking}>
+            <Button type="button" variant="outline" onClick={onRemoveSelection} disabled={isWorking && !isStopped}>
               Clear Selection
             </Button>
           </div>
@@ -719,10 +724,20 @@ export function Workflow() {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="outline" onClick={onPauseOrResume}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => { void onPauseOrResume(); }}
+          disabled={!canPauseOrStop}
+        >
           {isPaused ? "Resume" : "Pause"}
         </Button>
-        <Button type="button" variant="destructive" onClick={onStopSession}>
+        <Button
+          type="button"
+          variant="destructive"
+          onClick={() => { void onStopSession(); }}
+          disabled={!canPauseOrStop}
+        >
           Stop
         </Button>
         <Button
