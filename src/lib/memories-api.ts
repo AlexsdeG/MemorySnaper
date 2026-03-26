@@ -66,6 +66,7 @@ export type ViewerItem = {
   thumbnailPath: string;
   mediaPath: string;
   mediaKind: ViewerMediaKind;
+  mediaFormat?: string;
 };
 
 export type DownloadRateLimitSettings = {

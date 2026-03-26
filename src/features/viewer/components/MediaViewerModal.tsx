@@ -21,6 +21,7 @@ type MediaViewerModalItem = {
   id: string;
   mediaSrc: string;
   mediaKind: ViewerMediaKind;
+  mediaFormat?: string;
   dateTaken: string;
   location?: string;
   rawLocation?: string;
@@ -643,11 +644,11 @@ export function MediaViewerModal({
                   <source src={videoObjectUrl ?? item.mediaSrc} />
                 </video>
 
-                {/* {videoLoadError ? (
+                {videoLoadError ? (
                   <p className="max-w-3xl text-center text-xs text-white/85">
                     {t("viewer.modal.videoUnsupported")}
                   </p>
-                ) : null} */}
+                ) : null}
               </div>
             ) : (
               <img
@@ -681,6 +682,7 @@ export function MediaViewerModal({
         id: item.id,
         dateTaken: item.dateTaken,
         mediaKind: item.mediaKind,
+        mediaFormat: item.mediaFormat,
         location: item.location,
         rawLocation: item.rawLocation,
       }}

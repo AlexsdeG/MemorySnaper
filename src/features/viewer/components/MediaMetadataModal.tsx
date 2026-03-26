@@ -9,6 +9,7 @@ type MetadataItem = {
   id: string;
   dateTaken: string;
   mediaKind: ViewerMediaKind;
+  mediaFormat?: string;
   location?: string;  // resolved location name
   rawLocation?: string;  // raw coordinates
 };
@@ -68,6 +69,9 @@ export function MediaMetadataModal({ open, onClose, item }: MediaMetadataModalPr
     item.mediaKind === "video"
       ? t("viewer.metadata.type.video")
       : t("viewer.metadata.type.image");
+  const typeWithFormat = item.mediaFormat
+    ? `${typeLabel}, ${item.mediaFormat.toUpperCase()}`
+    : typeLabel;
 
   return (
     <div
@@ -106,7 +110,7 @@ export function MediaMetadataModal({ open, onClose, item }: MediaMetadataModalPr
           </div>
           <div className="flex items-baseline justify-between gap-4">
             <dt className="shrink-0 text-muted-foreground">{t("viewer.metadata.type")}</dt>
-            <dd>{typeLabel}</dd>
+            <dd>{typeWithFormat}</dd>
           </div>
           <div className="flex items-baseline justify-between gap-4">
             <dt className="shrink-0 text-muted-foreground">{t("viewer.metadata.date")}</dt>

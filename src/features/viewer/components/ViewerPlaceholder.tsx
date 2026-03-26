@@ -18,6 +18,7 @@ type GridItem = {
   thumbnailSrc: string;
   mediaSrc: string;
   mediaKind: ViewerMediaKind;
+  mediaFormat?: string;
   dateTaken: string;
   location?: string;
   rawLocation?: string;
@@ -39,6 +40,7 @@ export function ViewerPlaceholder() {
           thumbnailSrc: convertFileSrc(row.thumbnailPath, "asset"),
           mediaSrc: convertFileSrc(row.mediaPath, "asset"),
           mediaKind: row.mediaKind,
+          mediaFormat: row.mediaFormat ?? undefined,
           dateTaken: row.dateTaken,
           location: row.location ?? undefined,
           rawLocation: row.rawLocation ?? undefined,
@@ -163,6 +165,7 @@ export function ViewerPlaceholder() {
         id: item.id,
         mediaSrc: item.mediaSrc,
         mediaKind: item.mediaKind,
+        mediaFormat: item.mediaFormat,
         dateTaken: item.dateTaken,
         location: item.location,
         rawLocation: item.rawLocation,

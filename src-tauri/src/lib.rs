@@ -107,6 +107,7 @@ struct ViewerItem {
     thumbnail_path: String,
     media_path: String,
     media_kind: ViewerMediaKind,
+    media_format: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1453,6 +1454,10 @@ async fn get_viewer_items(
         let Some(media_kind) = viewer_media_kind_from_path(&media_path) else {
             continue;
         };
+        let media_format = media_path
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(|value| value.to_ascii_uppercase());
 
         let resolved_thumbnail_path = std::fs::canonicalize(&thumbnail_path)
             .unwrap_or(thumbnail_path);
@@ -1466,6 +1471,7 @@ async fn get_viewer_items(
             thumbnail_path: resolved_thumbnail_path.to_string_lossy().to_string(),
             media_path: resolved_media_path.to_string_lossy().to_string(),
             media_kind,
+            media_format,
         });
     }
 
