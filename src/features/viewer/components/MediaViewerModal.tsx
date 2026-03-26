@@ -23,6 +23,7 @@ type MediaViewerModalItem = {
   mediaKind: ViewerMediaKind;
   dateTaken: string;
   location?: string;
+  rawLocation?: string;
 };
 
 type MediaViewerModalProps = {
@@ -663,6 +664,7 @@ export function MediaViewerModal({
         dateTaken: item.dateTaken,
         mediaKind: item.mediaKind,
         location: item.location,
+        rawLocation: item.rawLocation,
       }}
     />
     </>

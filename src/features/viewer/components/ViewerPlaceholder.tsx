@@ -20,6 +20,7 @@ type GridItem = {
   mediaKind: ViewerMediaKind;
   dateTaken: string;
   location?: string;
+  rawLocation?: string;
 };
 
 export function ViewerPlaceholder() {
@@ -40,6 +41,7 @@ export function ViewerPlaceholder() {
           mediaKind: row.mediaKind,
           dateTaken: row.dateTaken,
           location: row.location ?? undefined,
+          rawLocation: row.rawLocation ?? undefined,
         }));
 
         console.log("[viewer] Loaded viewer rows", {
@@ -149,6 +151,7 @@ export function ViewerPlaceholder() {
         dateTaken: item.dateTaken,
         mediaKind: item.mediaKind,
         location: item.location,
+        rawLocation: item.rawLocation,
       })),
     [items],
   );
@@ -162,6 +165,7 @@ export function ViewerPlaceholder() {
         mediaKind: item.mediaKind,
         dateTaken: item.dateTaken,
         location: item.location,
+        rawLocation: item.rawLocation,
       })),
     [items],
   );

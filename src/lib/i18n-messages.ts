@@ -124,6 +124,7 @@ const enMessages = {
   "viewer.metadata.date": "Date",
   "viewer.metadata.time": "Time",
   "viewer.metadata.location": "Location",
+  "viewer.metadata.coordinates": "Coordinates",
   "viewer.metadata.noLocation": "—",
   "viewer.metadata.close": "Close",
 } as const;
@@ -260,6 +261,7 @@ const deMessages: Record<TranslationKey, string> = {
   "viewer.metadata.date": "Datum",
   "viewer.metadata.time": "Uhrzeit",
   "viewer.metadata.location": "Ort",
+  "viewer.metadata.coordinates": "Koordinaten",
   "viewer.metadata.noLocation": "—",
   "viewer.metadata.close": "Schließen",
 };

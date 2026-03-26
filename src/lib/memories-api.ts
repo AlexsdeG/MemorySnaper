@@ -61,7 +61,8 @@ export type ViewerMediaKind = "image" | "video";
 export type ViewerItem = {
   memoryItemId: number;
   dateTaken: string;
-  location?: string;
+  location?: string;  // resolved location name (city, region, country)
+  rawLocation?: string;  // raw coordinates (lat,lon) from export
   thumbnailPath: string;
   mediaPath: string;
   mediaKind: ViewerMediaKind;

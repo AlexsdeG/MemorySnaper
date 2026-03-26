@@ -9,7 +9,8 @@ type MetadataItem = {
   id: string;
   dateTaken: string;
   mediaKind: ViewerMediaKind;
-  location?: string;
+  location?: string;  // resolved location name
+  rawLocation?: string;  // raw coordinates
 };
 
 type MediaMetadataModalProps = {
@@ -119,6 +120,12 @@ export function MediaMetadataModal({ open, onClose, item }: MediaMetadataModalPr
             <dt className="shrink-0 text-muted-foreground">{t("viewer.metadata.location")}</dt>
             <dd className="text-right">{item.location ?? t("viewer.metadata.noLocation")}</dd>
           </div>
+          {item.rawLocation ? (
+            <div className="flex items-baseline justify-between gap-4">
+              <dt className="shrink-0 text-muted-foreground">{t("viewer.metadata.coordinates")}</dt>
+              <dd className="truncate font-mono text-xs">{item.rawLocation}</dd>
+            </div>
+          ) : null}
         </dl>
       </div>
     </div>

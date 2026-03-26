@@ -12,6 +12,7 @@ type ThumbnailItem = {
   dateTaken: string;
   mediaKind: ViewerMediaKind;
   location?: string;
+  rawLocation?: string;
 };
 
 type GridProps = {

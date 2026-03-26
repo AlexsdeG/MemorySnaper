@@ -573,7 +573,9 @@ mod tests {
             CREATE TABLE IF NOT EXISTS MemoryItem (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT NOT NULL,
+                date_time TEXT,
                 location TEXT,
+                location_resolved TEXT,
                 media_url TEXT NOT NULL,
                 overlay_url TEXT,
                 status TEXT NOT NULL

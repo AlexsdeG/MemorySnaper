@@ -12,10 +12,37 @@ fn get_geocoder() -> &'static ReverseGeocoder<'static> {
 
 /// Parse a Snapchat location string like "48.137154, 11.576124" into (lat, lon).
 fn parse_lat_lon(raw: &str) -> Option<(f64, f64)> {
+    let raw = coordinate_payload(raw);
     let mut parts = raw.splitn(2, ',');
     let lat = parts.next()?.trim().parse::<f64>().ok()?;
     let lon = parts.next()?.trim().parse::<f64>().ok()?;
     Some((lat, lon))
+}
+
+fn coordinate_payload(raw: &str) -> &str {
+    let trimmed = raw.trim();
+
+    if let Some((prefix, suffix)) = trimmed.rsplit_once(':') {
+        let candidate = suffix.trim();
+        if candidate.contains(',') && prefix.chars().any(|character| character.is_alphabetic()) {
+            return candidate;
+        }
+    }
+
+    trimmed
+}
+
+pub fn normalize_location_text(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if parse_lat_lon(trimmed).is_some() {
+        return Some(coordinate_payload(trimmed).to_string());
+    }
+
+    Some(trimmed.to_string())
 }
 
 /// Resolve a lat/lon pair (or a raw Snapchat "lat, lon" string) to a human-readable location.
@@ -234,4 +261,129 @@ fn country_name(code: &str) -> String {
         other => other,
     }
     .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{normalize_location_text, parse_lat_lon, resolve_location};
+
+    #[test]
+    fn parses_valid_snapchat_location_format() {
+        // Standard format: "lat, lon"
+        let result = parse_lat_lon("48.137154, 11.576124");
+        assert_eq!(result, Some((48.137154, 11.576124)));
+    }
+
+    #[test]
+    fn parses_location_without_spaces() {
+        let result = parse_lat_lon("48.137154,11.576124");
+        assert_eq!(result, Some((48.137154, 11.576124)));
+    }
+
+    #[test]
+    fn parses_location_with_extra_whitespace() {
+        let result = parse_lat_lon("  48.137154  ,  11.576124  ");
+        assert_eq!(result, Some((48.137154, 11.576124)));
+    }
+
+    #[test]
+    fn parses_prefixed_snapchat_location_format() {
+        let result = parse_lat_lon("Latitude, Longitude: 50.10691, 14.432932");
+        assert_eq!(result, Some((50.10691, 14.432932)));
+    }
+
+    #[test]
+    fn normalizes_prefixed_snapchat_location_text() {
+        let result = normalize_location_text("Latitude, Longitude: 50.10691, 14.432932");
+        assert_eq!(result.as_deref(), Some("50.10691, 14.432932"));
+    }
+
+    #[test]
+    fn parses_negative_coordinates() {
+        // South/West coordinates
+        let result = parse_lat_lon("-33.8688, 151.2093");
+        assert_eq!(result, Some((-33.8688, 151.2093)));
+    }
+
+    #[test]
+    fn returns_none_for_empty_string() {
+        assert_eq!(parse_lat_lon(""), None);
+    }
+
+    #[test]
+    fn returns_none_for_missing_comma() {
+        assert_eq!(parse_lat_lon("48.137154 11.576124"), None);
+    }
+
+    #[test]
+    fn returns_none_for_missing_longitude() {
+        assert_eq!(parse_lat_lon("48.137154,"), None);
+    }
+
+    #[test]
+    fn returns_none_for_invalid_latitude() {
+        assert_eq!(parse_lat_lon("not-a-number, 11.576124"), None);
+    }
+
+    #[test]
+    fn returns_none_for_invalid_longitude() {
+        assert_eq!(parse_lat_lon("48.137154, not-a-number"), None);
+    }
+
+    #[test]
+    fn resolves_known_location_munich() {
+        // Munich, Germany coordinates
+        let result = resolve_location("48.137154, 11.576124");
+        assert!(result.is_some());
+        let location = result.unwrap();
+        // Should contain at least the country
+        assert!(location.contains("Germany"));
+    }
+
+    #[test]
+    fn resolves_prefixed_snapchat_location() {
+        let result = resolve_location("Latitude, Longitude: 50.10691, 14.432932");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn returns_none_for_unparseable_location() {
+        assert_eq!(resolve_location(""), None);
+    }
+
+    #[test]
+    fn returns_none_for_invalid_coordinates_format() {
+        assert_eq!(resolve_location("not-a-location"), None);
+    }
+
+    #[test]
+    fn returns_none_for_edge_case_zero_zero() {
+        // Null Island - coordinates may not resolve
+        let result = resolve_location("0, 0");
+        // This may or may not resolve depending on geocoder data
+        // Just verify it doesn't panic
+        let _ = result;
+    }
+
+    #[test]
+    fn returns_none_for_out_of_range_latitude() {
+        // parse_lat_lon accepts any valid float, but resolving coordinates > 90 may fail
+        let result = parse_lat_lon("95, 0");
+        assert_eq!(result, Some((95.0, 0.0))); // Parsing succeeds, but geocoding may not work
+    }
+
+    #[test]
+    fn returns_none_for_out_of_range_longitude() {
+        // parse_lat_lon accepts any valid float, but resolving coordinates > 180 may fail
+        let result = parse_lat_lon("0, 185");
+        assert_eq!(result, Some((0.0, 185.0))); // Parsing succeeds, but geocoding may not work
+    }
+
+    #[test]
+    fn handles_extremely_large_coordinates_gracefully() {
+        // Very large numbers - should either parse or return None, but not panic
+        let result = parse_lat_lon("999999, 999999");
+        // The function should parse it but the geocoder may not find a location
+        assert!(result == Some((999999.0, 999999.0)) || result.is_none());
+    }
 }

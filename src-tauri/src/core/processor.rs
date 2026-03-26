@@ -686,7 +686,7 @@ mod tests {
         std::fs::write(&staged_overlay, b"overlay").unwrap();
 
         cleanup_source_artifacts(
-            &[staged_main.clone()],
+            std::slice::from_ref(&staged_main),
             Some(&staged_overlay),
             None,
             true,

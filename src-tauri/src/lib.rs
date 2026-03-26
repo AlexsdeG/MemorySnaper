@@ -103,6 +103,7 @@ struct ViewerItem {
     memory_item_id: i64,
     date_taken: String,
     location: Option<String>,
+    raw_location: Option<String>,
     thumbnail_path: String,
     media_path: String,
     media_kind: ViewerMediaKind,
@@ -1245,7 +1246,7 @@ async fn apply_metadata_to_output_files(
         .map_err(|error| format!("failed to connect to memories database: {error}"))?;
 
     let rows = sqlx::query(
-        "SELECT id, date, location FROM MemoryItem WHERE status IN ('downloaded', 'processed') ORDER BY id ASC",
+        "SELECT id, date, COALESCE(location_resolved, location) AS location FROM MemoryItem WHERE status IN ('downloaded', 'processed') ORDER BY id ASC",
     )
     .fetch_all(&pool)
     .await
@@ -1371,7 +1372,8 @@ async fn get_viewer_items(
         "
         SELECT id,
                COALESCE(date_time, date) AS date,
-               COALESCE(location_resolved, location) AS location
+               location_resolved,
+               location
         FROM MemoryItem
         WHERE status = 'processed'
         ORDER BY id DESC
@@ -1384,52 +1386,107 @@ async fn get_viewer_items(
     .await
     .map_err(|error| format!("failed to query processed memories for viewer items: {error}"))?;
 
-    pool.close().await;
-
     let output_dir = resolve_output_dir(&app, ".raw_cache")?;
     let thumbnails_dir = output_dir.join(".thumbnails");
 
-    let items = rows
-        .into_iter()
-        .filter_map(|row| {
-            let memory_item_id = row.get::<i64, _>("id");
-            let date_taken = row.get::<String, _>("date");
-            let location: Option<String> = row.try_get("location").ok().flatten();
+    let mut resolved_location_updates = Vec::new();
+    let mut items = Vec::new();
 
-            let thumbnail_path = thumbnails_dir.join(format!("{memory_item_id}.webp"));
-            if !thumbnail_path.exists() {
-                return None;
-            }
+    for row in rows {
+        let memory_item_id = row.get::<i64, _>("id");
+        let date_taken = row.get::<String, _>("date");
+        let location_resolved: Option<String> = row.try_get("location_resolved").ok().flatten();
+        let location_raw: Option<String> = row.try_get("location").ok().flatten();
+        let normalized_raw_location = location_raw
+            .as_deref()
+            .and_then(crate::core::geocoder::normalize_location_text);
+        let derived_location_resolved = location_resolved.clone().or_else(|| {
+            location_raw
+                .as_deref()
+                .and_then(crate::core::geocoder::resolve_location)
+        });
 
-            let media_path = match find_output_file_for_memory_item_recursive(&output_dir, memory_item_id)
-            {
-                Ok(path) => path,
-                Err(error) => {
+        if location_resolved.is_none() {
+            match (location_raw.as_deref(), derived_location_resolved.as_ref()) {
+                (Some(raw), Some(resolved)) => {
                     eprintln!(
-                        "[viewer] failed to locate media path for memory item {}: {}",
+                        "[viewer-debug] self-healed location for memory_item_id={} raw='{}' resolved='{}'",
                         memory_item_id,
-                        error
+                        raw,
+                        resolved
                     );
-                    None
+                    resolved_location_updates.push((memory_item_id, resolved.clone()));
                 }
-            }?;
+                (Some(raw), None) => {
+                    eprintln!(
+                        "[viewer-debug] location unresolved for memory_item_id={} raw='{}'",
+                        memory_item_id,
+                        raw
+                    );
+                }
+                _ => {}
+            }
+        }
 
-            let media_kind = viewer_media_kind_from_path(&media_path)?;
+        let location = derived_location_resolved.clone().or_else(|| normalized_raw_location.clone());
+        let raw_location = normalized_raw_location
+            .filter(|raw| location.as_deref() != Some(raw.as_str()));
 
-            let resolved_thumbnail_path = std::fs::canonicalize(&thumbnail_path)
-                .unwrap_or(thumbnail_path);
-            let resolved_media_path = std::fs::canonicalize(&media_path).unwrap_or(media_path);
+        let thumbnail_path = thumbnails_dir.join(format!("{memory_item_id}.webp"));
+        if !thumbnail_path.exists() {
+            continue;
+        }
 
-            Some(ViewerItem {
+        let media_path = match find_output_file_for_memory_item_recursive(&output_dir, memory_item_id) {
+            Ok(Some(path)) => path,
+            Ok(None) => continue,
+            Err(error) => {
+                eprintln!(
+                    "[viewer] failed to locate media path for memory item {}: {}",
+                    memory_item_id,
+                    error
+                );
+                continue;
+            }
+        };
+
+        let Some(media_kind) = viewer_media_kind_from_path(&media_path) else {
+            continue;
+        };
+
+        let resolved_thumbnail_path = std::fs::canonicalize(&thumbnail_path)
+            .unwrap_or(thumbnail_path);
+        let resolved_media_path = std::fs::canonicalize(&media_path).unwrap_or(media_path);
+
+        items.push(ViewerItem {
+            memory_item_id,
+            date_taken,
+            location,
+            raw_location,
+            thumbnail_path: resolved_thumbnail_path.to_string_lossy().to_string(),
+            media_path: resolved_media_path.to_string_lossy().to_string(),
+            media_kind,
+        });
+    }
+
+    for (memory_item_id, resolved_location) in resolved_location_updates {
+        if let Err(error) = sqlx::query(
+            "UPDATE MemoryItem SET location_resolved = ?1 WHERE id = ?2 AND location_resolved IS NULL",
+        )
+        .bind(&resolved_location)
+        .bind(memory_item_id)
+        .execute(&pool)
+        .await
+        {
+            eprintln!(
+                "[viewer-debug] failed to persist self-healed location for memory_item_id {}: {}",
                 memory_item_id,
-                date_taken,
-                location,
-                thumbnail_path: resolved_thumbnail_path.to_string_lossy().to_string(),
-                media_path: resolved_media_path.to_string_lossy().to_string(),
-                media_kind,
-            })
-        })
-        .collect::<Vec<_>>();
+                error
+            );
+        }
+    }
+
+    pool.close().await;
 
     Ok(items)
 }
@@ -1549,7 +1606,7 @@ async fn process_downloaded_memories(
             mc.order_index AS order_index,
             mi.id AS memory_item_id,
             mi.date AS date,
-            mi.location AS location
+            COALESCE(mi.location_resolved, mi.location) AS location
         FROM MediaChunks mc
         JOIN MemoryItem mi
             ON mi.media_url = mc.url
@@ -1569,7 +1626,7 @@ async fn process_downloaded_memories(
 
         let fallback_rows = sqlx::query(
             "
-            SELECT id, date, location
+            SELECT id, date, COALESCE(location_resolved, location) AS location
             FROM MemoryItem
             WHERE status IN ('downloaded', 'processing_failed')
             ORDER BY id ASC
@@ -2032,7 +2089,7 @@ async fn process_memories_from_zip_archives(
             m.date AS memory_date,
             m.mid AS memory_mid,
             mi.id AS memory_item_id,
-            mi.location AS location,
+            COALESCE(mi.location_resolved, mi.location) AS location,
             mc.url AS media_url
         FROM Memories m
         JOIN MediaChunks mc
@@ -2585,6 +2642,23 @@ async fn backfill_metadata(database_url: String) {
         }
     };
 
+    if rows.is_empty() {
+        eprintln!("[backfill] no rows to backfill");
+        pool.close().await;
+        return;
+    }
+
+    // Process enrichment: collect all updates to batch them
+    #[derive(Debug)]
+    struct Enriched {
+        id: i64,
+        date_time: Option<String>,
+        location_resolved: Option<String>,
+    }
+
+    let mut enriched_rows = Vec::with_capacity(rows.len());
+    let mut errors = Vec::new();
+
     for row in rows {
         let id: i64 = row.get("id");
         let date: String = row.get("date");
@@ -2594,17 +2668,71 @@ async fn backfill_metadata(database_url: String) {
         let location_resolved =
             location.as_deref().and_then(crate::core::geocoder::resolve_location);
 
-        if let Err(error) = sqlx::query(
-            "UPDATE MemoryItem SET date_time = ?1, location_resolved = ?2 WHERE id = ?3",
-        )
-        .bind(&date_time)
-        .bind(&location_resolved)
-        .bind(id)
-        .execute(&pool)
-        .await
-        {
-            eprintln!("[backfill] failed to update item {id}: {error}");
+        enriched_rows.push(Enriched {
+            id,
+            date_time,
+            location_resolved,
+        });
+    }
+
+    eprintln!(
+        "[backfill] enriched {} rows, processing batch updates",
+        enriched_rows.len()
+    );
+
+    // Batch updates in groups of 100 to avoid query size limits
+    const BATCH_SIZE: usize = 100;
+    for chunk in enriched_rows.chunks(BATCH_SIZE) {
+        let mut query_builder = sqlx::query_builder::QueryBuilder::new(
+            "UPDATE MemoryItem SET date_time = CASE id ",
+        );
+
+        for enriched in chunk {
+            query_builder.push("WHEN ");
+            query_builder.push_bind(enriched.id);
+            query_builder.push(" THEN ");
+            query_builder.push_bind(&enriched.date_time);
         }
+
+        query_builder.push(" END, location_resolved = CASE id ");
+
+        for enriched in chunk {
+            query_builder.push("WHEN ");
+            query_builder.push_bind(enriched.id);
+            query_builder.push(" THEN ");
+            query_builder.push_bind(&enriched.location_resolved);
+        }
+
+        query_builder.push(" END WHERE id IN (");
+        let mut first = true;
+        for enriched in chunk {
+            if !first {
+                query_builder.push(", ");
+            }
+            query_builder.push_bind(enriched.id);
+            first = false;
+        }
+        query_builder.push(")");
+
+        let query = query_builder.build();
+
+        if let Err(error) = query.execute(&pool).await {
+            eprintln!(
+                "[backfill] failed to batch update {} rows: {error}",
+                chunk.len()
+            );
+            errors.push(error.to_string());
+        }
+    }
+
+    if !errors.is_empty() {
+        eprintln!(
+            "[backfill] completed with {} errors out of {} batches",
+            errors.len(),
+            enriched_rows.len().div_ceil(BATCH_SIZE)
+        );
+    } else {
+        eprintln!("[backfill] successfully enriched {} rows", enriched_rows.len());
     }
 
     pool.close().await;
