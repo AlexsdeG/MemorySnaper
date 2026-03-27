@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Archive } from "lucide-react";
+import { Archive, PackageOpen } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -716,45 +716,89 @@ export function Workflow() {
 
   return (
     <div className="space-y-5">
-      {/* ZIP Selector */}
-      <ZipSelector
-        selectedZipPaths={selectedZipPaths}
-        validationState={validationState}
-        validationMessage={validationMessage}
-        isWorking={isWorking}
-        onPickZipFiles={() => { void onPickZipFiles(); }}
-        onRemoveSelection={onRemoveSelection}
-        extractFileNameFromPath={extractFileNameFromPath}
-      />
-
-      {/* Viewer Archive Import */}
-      <div className="rounded-lg border bg-card p-4 space-y-2">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <Archive className="h-4 w-4 text-muted-foreground" />
-          {t("downloader.workflow.viewerImport.label")}
+      {/* ── Path A: Returning user ── */}
+      <div className="rounded-xl border bg-card overflow-hidden">
+        <div className="flex items-start gap-4 p-5">
+          <div className="mt-0.5 shrink-0 rounded-lg bg-emerald-500/10 p-2.5">
+            <Archive className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold">{t("downloader.workflow.path.returningTitle")}</span>
+              <Badge variant="secondary" className="px-1.5 py-0 text-[10px] leading-tight">
+                {t("downloader.workflow.path.returningBadge")}
+              </Badge>
+            </div>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {t("downloader.workflow.path.returningHint")}
+            </p>
+          </div>
         </div>
-        <p className="text-xs text-muted-foreground">
-          {isViewerImportBlockedByZipSelection
-            ? t("downloader.workflow.viewerImport.disabledReason")
-            : t("downloader.workflow.viewerImport.description")}
-        </p>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => { void onImportViewerArchive(); }}
-          disabled={
-            isImportingViewerArchive ||
-            isViewerImportBlockedByZipSelection ||
-            isWorking
-          }
-          className="gap-1.5"
-        >
-          <Archive className="h-3.5 w-3.5" />
-          {isImportingViewerArchive
-            ? t("downloader.workflow.viewerImport.inProgress")
-            : t("downloader.workflow.viewerImport.button")}
-        </Button>
+        <div className="flex flex-wrap items-center gap-3 border-t bg-muted/30 px-5 py-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => { void onImportViewerArchive(); }}
+            disabled={
+              isImportingViewerArchive ||
+              isViewerImportBlockedByZipSelection ||
+              isWorking
+            }
+            className="gap-1.5"
+          >
+            <Archive className="h-3.5 w-3.5" />
+            {isImportingViewerArchive
+              ? t("downloader.workflow.viewerImport.inProgress")
+              : t("downloader.workflow.viewerImport.button")}
+          </Button>
+          {isViewerImportBlockedByZipSelection && (
+            <p className="text-[11px] text-muted-foreground">
+              {t("downloader.workflow.viewerImport.disabledReason")}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* ── OR divider ── */}
+      <div className="relative flex items-center gap-3 py-1">
+        <div className="h-px flex-1 bg-border" />
+        <span className="shrink-0 select-none text-xs font-bold uppercase tracking-[0.25em] text-muted-foreground/70">
+          {t("downloader.workflow.choice.or")}
+        </span>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+
+      {/* ── Path B: New user ── */}
+      <div className="rounded-xl border bg-card overflow-hidden">
+        <div className="flex items-start gap-4 p-5">
+          <div className="mt-0.5 shrink-0 rounded-lg bg-primary/10 p-2.5">
+            <PackageOpen className="h-5 w-5 text-primary" />
+          </div>
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold">{t("downloader.workflow.path.newTitle")}</span>
+              <Badge variant="secondary" className="px-1.5 py-0 text-[10px] leading-tight">
+                {t("downloader.workflow.path.newBadge")}
+              </Badge>
+            </div>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {t("downloader.workflow.path.newHint")}
+            </p>
+          </div>
+        </div>
+        <div className="border-t px-5 py-4">
+          <ZipSelector
+            selectedZipPaths={selectedZipPaths}
+            validationState={validationState}
+            validationMessage={validationMessage}
+            isWorking={isWorking}
+            onPickZipFiles={() => { void onPickZipFiles(); }}
+            onRemoveSelection={onRemoveSelection}
+            extractFileNameFromPath={extractFileNameFromPath}
+            noCard
+          />
+        </div>
       </div>
 
       {/* Action Bar */}

@@ -156,6 +156,17 @@ const enMessages = {
   "downloader.workflow.viewerImport.error": "Viewer import failed. Please try again.",
   "downloader.workflow.viewerImport.wrongArchiveType":
     "This is not a viewer export archive. Select a ZIP exported from the Viewer tab.",
+  "downloader.workflow.choice.or": "OR",
+  "downloader.workflow.choice.description":
+    "If you're new, use Snapchat ZIP exports below. If you've already used this tool, import your viewer archive above.",
+  "downloader.workflow.path.returningBadge": "Already a user?",
+  "downloader.workflow.path.returningTitle": "Import Viewer Archive",
+  "downloader.workflow.path.returningHint":
+    "You've used MemorySnaper before. Import your previously exported viewer archive to instantly restore all your memories.",
+  "downloader.workflow.path.newBadge": "New here?",
+  "downloader.workflow.path.newTitle": "Start from Snapchat Export",
+  "downloader.workflow.path.newHint":
+    "First time with MemorySnaper? Select your Snapchat ZIP export(s) below and the tool will process and download all your memories.",
 
   "downloader.zipSelector.title": "Snapchat ZIP Exports",
   "downloader.zipSelector.description":
@@ -437,6 +448,17 @@ const deMessages: Record<TranslationKey, string> = {
   "downloader.workflow.viewerImport.error": "Viewer-Import fehlgeschlagen. Bitte erneut versuchen.",
   "downloader.workflow.viewerImport.wrongArchiveType":
     "Kein Viewer-Export-Archiv. Bitte eine ZIP-Datei auswählen, die über den Betrachter-Tab exportiert wurde.",
+  "downloader.workflow.choice.or": "ODER",
+  "downloader.workflow.choice.description":
+    "Wenn du neu bist, nutze unten die Snapchat-ZIP-Exporte. Wenn du das Tool bereits genutzt hast, importiere oben dein Viewer-Archiv.",
+  "downloader.workflow.path.returningBadge": "Bereits genutzt?",
+  "downloader.workflow.path.returningTitle": "Viewer-Archiv importieren",
+  "downloader.workflow.path.returningHint":
+    "Du hast MemorySnaper schon verwendet. Importiere dein zuvor exportiertes Viewer-Archiv, um alle Erinnerungen sofort wiederherzustellen.",
+  "downloader.workflow.path.newBadge": "Neu hier?",
+  "downloader.workflow.path.newTitle": "Von Snapchat-Export starten",
+  "downloader.workflow.path.newHint":
+    "Zum ersten Mal bei MemorySnaper? Wähle unten deine Snapchat-ZIP-Exporte aus und das Tool verarbeitet und lädt alle deine Erinnerungen herunter.",
 
   "downloader.zipSelector.title": "Snapchat-ZIP-Exporte",
   "downloader.zipSelector.description":

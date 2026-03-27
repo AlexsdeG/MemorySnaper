@@ -13,6 +13,7 @@ type ZipSelectorProps = {
   onPickZipFiles: () => void;
   onRemoveSelection: () => void;
   extractFileNameFromPath: (path: string) => string;
+  noCard?: boolean;
 };
 
 export function ZipSelector({
@@ -23,11 +24,12 @@ export function ZipSelector({
   onPickZipFiles,
   onRemoveSelection,
   extractFileNameFromPath,
+  noCard = false,
 }: ZipSelectorProps) {
   const { t } = useI18n();
 
   return (
-    <div className="rounded-lg border bg-card p-4 space-y-3">
+    <div className={noCard ? "space-y-3" : "rounded-lg border bg-card p-4 space-y-3"}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-medium">
           <FileArchive className="h-4 w-4 text-muted-foreground" />
