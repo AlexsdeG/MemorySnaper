@@ -829,11 +829,11 @@ export function Workflow() {
         <div className="grid gap-1 text-xs text-muted-foreground">
           <p>Session Job: {jobId ?? "n/a"}</p>
           <p>Files Processed: {processProgress?.completedFiles ?? processedFiles} / {totalFiles}</p>
-          <p>Downloaded Files: {downloadProgress?.successfulFiles ?? downloadedFiles} / {totalFiles}</p>
+          <p>Imported Files: {downloadProgress?.successfulFiles ?? downloadedFiles} / {totalFiles}</p>
           <p>Duplicates Skipped: {duplicatesSkipped}</p>
           <p>Active ZIP: {activeZip ?? "n/a"}</p>
           <p>
-            Download Status: {translateDownloadStatus(downloadProgress?.status ?? "idle")} · Process Status: {processProgress?.status ?? "idle"}
+            Import Status: {translateDownloadStatus(downloadProgress?.status ?? "idle")} · Process Status: {processProgress?.status ?? "idle"}
           </p>
           <p>Paused: {isPaused ? "Yes" : "No"} · Stopped: {isStopped ? "Yes" : "No"}</p>
         </div>

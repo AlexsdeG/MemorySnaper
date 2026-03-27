@@ -16,7 +16,14 @@ import {
   type GridStickyHeader,
   type GridTimelineRow,
 } from "@/features/viewer/components/Grid";
+import { ViewerFilterBar } from "@/features/viewer/components/ViewerFilterBar";
 import { MediaViewerModal } from "@/features/viewer/components/MediaViewerModal";
+import {
+  applyViewerFilters,
+  DEFAULT_FILTER_STATE,
+  extractFilterMeta,
+  type ViewerFilterState,
+} from "@/features/viewer/viewer-filters";
 import {
   formatViewerMonthLabel,
   formatViewerYearLabel,
@@ -54,11 +61,21 @@ type TimelineThumbnailItem = {
 export function ViewerPlaceholder() {
   const { t, resolvedLocale } = useI18n();
   const [items, setItems] = useState<GridItem[]>([]);
+  const [filterState, setFilterState] = useState<ViewerFilterState>(() => ({
+    ...DEFAULT_FILTER_STATE,
+    mediaKinds: new Set(),
+    mediaFormats: new Set(),
+    timeSlots: new Set(),
+    countries: new Set(),
+  }));
   const [status, setStatus] = useState(t("viewer.status.loading"));
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+
+  const filterMeta = useMemo(() => extractFilterMeta(items), [items]);
+  const filteredItems = useMemo(() => applyViewerFilters(items, filterState), [items, filterState]);
 
   const loadViewerItems = useCallback(async () => {
     try {
@@ -150,7 +167,7 @@ export function ViewerPlaceholder() {
   };
 
   const closeModal = () => {
-    const selectedItemId = selectedIndex !== null ? items[selectedIndex]?.id : undefined;
+    const selectedItemId = selectedIndex !== null ? filteredItems[selectedIndex]?.id : undefined;
     setIsModalOpen(false);
 
     if (!selectedItemId) {
@@ -164,7 +181,7 @@ export function ViewerPlaceholder() {
   };
 
   const openModalAt = (index: number) => {
-    if (index < 0 || index >= items.length) {
+    if (index < 0 || index >= filteredItems.length) {
       return;
     }
 
@@ -183,7 +200,7 @@ export function ViewerPlaceholder() {
 
   const goNext = () => {
     setSelectedIndex((index) => {
-      if (index === null || index >= items.length - 1) {
+      if (index === null || index >= filteredItems.length - 1) {
         return index;
       }
       return index + 1;
@@ -227,7 +244,7 @@ export function ViewerPlaceholder() {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [isModalOpen, items.length, selectedIndex]);
+  }, [isModalOpen, filteredItems.length, selectedIndex]);
 
   const gridRows = useMemo<GridTimelineRow[]>(() => {
     const timelineRows: GridTimelineRow[] = [];
@@ -253,7 +270,7 @@ export function ViewerPlaceholder() {
       pendingRowItems = [];
     };
 
-    for (const [mediaIndex, item] of items.entries()) {
+    for (const [mediaIndex, item] of filteredItems.entries()) {
       const timelineItem: TimelineThumbnailItem = {
         id: item.id,
         src: item.thumbnailSrc,
@@ -343,12 +360,12 @@ export function ViewerPlaceholder() {
     }
 
     return timelineRows;
-  }, [items, resolvedLocale, t]);
+  }, [filteredItems, resolvedLocale, t]);
 
   const currentIndex = selectedIndex ?? -1;
   const modalItems = useMemo(
     () =>
-      items.map((item) => ({
+      filteredItems.map((item) => ({
         id: item.id,
         mediaSrc: item.mediaSrc,
         mediaKind: item.mediaKind,
@@ -357,7 +374,7 @@ export function ViewerPlaceholder() {
         location: item.location,
         rawLocation: item.rawLocation,
       })),
-    [items],
+    [filteredItems],
   );
 
   return (
@@ -369,6 +386,13 @@ export function ViewerPlaceholder() {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col space-y-3">
+        <ViewerFilterBar
+          filters={filterState}
+          onChange={setFilterState}
+          filterMeta={filterMeta}
+          totalCount={items.length}
+          filteredCount={filteredItems.length}
+        />
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
