@@ -10,7 +10,7 @@ import {
   Minimize,
   Info,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { Button } from "@/components/ui/button";
 import { readAppSettings } from "@/lib/app-settings";
@@ -56,6 +56,19 @@ export function MediaViewerModal({
   const [isMetadataOpen, setIsMetadataOpen] = useState(false);
   const mediaContainerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const blobCacheRef = useRef<Map<string, string>>(new Map());
+
+  // Explicitly reset the <video> element's GStreamer pipeline so the
+  // decoder releases all resources before a new source is loaded.
+  const resetVideoElement = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+  }, []);
 
   const syncFullscreenState = () => {
     const webkitDocument = document as Document & {
@@ -194,12 +207,16 @@ export function MediaViewerModal({
     };
   }, [open, item?.id, item?.mediaKind]);
 
+  // Derive MIME type from the stable mediaSrc string, not the item object.
+  const itemMediaSrc = item?.mediaSrc ?? null;
+  const itemMediaKind = item?.mediaKind ?? null;
+
   const videoMimeType = useMemo(() => {
-    if (!item) {
+    if (!itemMediaSrc) {
       return "video/mp4";
     }
 
-    const normalized = item.mediaSrc.toLowerCase();
+    const normalized = itemMediaSrc.toLowerCase();
     if (normalized.includes(".webm")) {
       return "video/webm; codecs=vp09.00.10.08,opus";
     }
@@ -208,29 +225,35 @@ export function MediaViewerModal({
     // video/mp4 significantly better than video/quicktime, so we use the
     // mp4 MIME type for both containers.
     return "video/mp4; codecs=avc1.640028,mp4a.40.2";
-  }, [item]);
+  }, [itemMediaSrc]);
 
   useEffect(() => {
-    if (!open || !item || item.mediaKind !== "video") {
-      setVideoObjectUrl((previous) => {
-        if (previous) {
-          URL.revokeObjectURL(previous);
-        }
-        return null;
-      });
+    if (!open || !itemMediaSrc || itemMediaKind !== "video") {
+      // Reset the decoder pipeline before clearing the source.
+      resetVideoElement();
+      setVideoObjectUrl(null);
+      setIsVideoLoading(false);
+      return;
+    }
+
+    // Re-use a cached blob URL for this source if available.
+    const cached = blobCacheRef.current.get(itemMediaSrc);
+    if (cached) {
+      resetVideoElement();
+      setVideoObjectUrl(cached);
+      setVideoLoadError(false);
       setIsVideoLoading(false);
       return;
     }
 
     let isCancelled = false;
-    let localObjectUrl: string | null = null;
 
     const loadVideoAsObjectUrl = async () => {
       try {
         setIsVideoLoading(true);
         setVideoLoadError(false);
 
-        const response = await fetch(item.mediaSrc);
+        const response = await fetch(itemMediaSrc);
         if (!response.ok) {
           throw new Error(`video fetch failed with status ${response.status}`);
         }
@@ -240,22 +263,22 @@ export function MediaViewerModal({
           blob.type && blob.type.length > 0
             ? blob
             : new Blob([blob], { type: videoMimeType });
-        localObjectUrl = URL.createObjectURL(typedBlob);
+        const objectUrl = URL.createObjectURL(typedBlob);
 
         if (isCancelled) {
-          URL.revokeObjectURL(localObjectUrl);
+          URL.revokeObjectURL(objectUrl);
           return;
         }
 
-        setVideoObjectUrl((previous) => {
-          if (previous) {
-            URL.revokeObjectURL(previous);
-          }
-          return localObjectUrl;
-        });
+        // Store in cache so reopening the same video is instant.
+        blobCacheRef.current.set(itemMediaSrc, objectUrl);
+
+        // Reset the decoder pipeline before assigning the new source.
+        resetVideoElement();
+        setVideoObjectUrl(objectUrl);
       } catch (error) {
         console.error("[viewer] Failed to load video for modal playback", {
-          mediaSrc: item.mediaSrc,
+          mediaSrc: itemMediaSrc,
           error,
         });
         if (!isCancelled) {
@@ -272,11 +295,21 @@ export function MediaViewerModal({
 
     return () => {
       isCancelled = true;
-      if (localObjectUrl) {
-        URL.revokeObjectURL(localObjectUrl);
-      }
     };
-  }, [open, item, videoMimeType]);
+  }, [open, itemMediaSrc, itemMediaKind, videoMimeType, resetVideoElement]);
+
+  // Evict the blob cache when the modal is fully closed so memory is
+  // released.  The cache only lives for the duration of a modal session.
+  useEffect(() => {
+    if (open) {
+      return;
+    }
+    const cache = blobCacheRef.current;
+    for (const url of cache.values()) {
+      URL.revokeObjectURL(url);
+    }
+    cache.clear();
+  }, [open]);
 
   useEffect(() => {
     if (!open || !item) {
@@ -625,15 +658,15 @@ export function MediaViewerModal({
 
                 <video
                   ref={videoRef}
-                  key={videoObjectUrl ?? item.mediaSrc}
+                  key={item.id}
                   className="h-auto max-h-full w-auto max-w-full rounded-lg object-contain"
                   style={mediaStyle}
-                  src={videoObjectUrl ?? item.mediaSrc}
+                  src={videoObjectUrl ?? undefined}
                   controls
                   autoPlay={videoAutoplayEnabled}
                   muted={!isSoundEnabled}
                   playsInline
-                  preload="metadata"
+                  preload="auto"
                   onLoadedData={() => {
                     setIsVideoLoading(false);
                   }}
@@ -646,10 +679,7 @@ export function MediaViewerModal({
                     setVideoLoadError(true);
                     setIsVideoLoading(false);
                   }}
-                >
-                  <source src={videoObjectUrl ?? item.mediaSrc} type={videoMimeType} />
-                  <source src={videoObjectUrl ?? item.mediaSrc} />
-                </video>
+                />
 
                 {videoLoadError ? (
                   <p className="text-xs text-white/75">{t("viewer.modal.videoUnsupported")}</p>

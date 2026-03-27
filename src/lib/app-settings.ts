@@ -7,6 +7,7 @@ export const DOWNLOADER_SESSION_STORAGE_KEY = "memorysnaper.downloader-session.v
 export type ThemePreference = "light" | "dark" | "system";
 export type StartupPagePreference = "system" | "downloader" | "viewer";
 export type ThumbnailQualityPreference = "360p" | "480p" | "720p" | "1080p";
+export type HardwareAccelerationPreference = "enabled" | "disabled";
 export type VideoProfilePreference =
   | "auto"
   | "mp4_compatible"
@@ -28,6 +29,7 @@ export type AppSettings = {
   imageQuality: ImageQualityPreference;
   videoAutoplay: boolean;
   videoMutedByDefault: boolean;
+  videoHardwareAcceleration: HardwareAccelerationPreference;
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -42,6 +44,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   imageQuality: "full",
   videoAutoplay: true,
   videoMutedByDefault: true,
+  videoHardwareAcceleration: "disabled",
 };
 
 function parseBooleanSetting(value: unknown, fallback: boolean): boolean {
@@ -106,6 +109,16 @@ export function parseImageQualityPreference(value: string | null): ImageQualityP
   }
 
   return "full";
+}
+
+export function parseHardwareAccelerationPreference(
+  value: string | null,
+): HardwareAccelerationPreference {
+  if (value === "enabled" || value === "disabled") {
+    return value;
+  }
+
+  return "disabled";
 }
 
 function normalizeNonNegativeInteger(value: unknown, fallback: number): number {
@@ -174,6 +187,11 @@ function parseSettings(rawValue: string): AppSettings | null {
       Reflect.get(parsedValue, "videoMutedByDefault"),
       DEFAULT_SETTINGS.videoMutedByDefault,
     );
+    const videoHardwareAcceleration = parseHardwareAccelerationPreference(
+      typeof Reflect.get(parsedValue, "videoHardwareAcceleration") === "string"
+        ? (Reflect.get(parsedValue, "videoHardwareAcceleration") as string)
+        : null,
+    );
 
     return {
       requestsPerMinute,
@@ -187,6 +205,7 @@ function parseSettings(rawValue: string): AppSettings | null {
       imageQuality,
       videoAutoplay,
       videoMutedByDefault,
+      videoHardwareAcceleration,
     };
   } catch {
     return null;

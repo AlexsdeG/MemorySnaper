@@ -16,6 +16,7 @@ import {
   writeAppSettings,
   type ImageOutputFormatPreference,
   type ImageQualityPreference,
+  type HardwareAccelerationPreference,
   type ThumbnailQualityPreference,
   type StartupPagePreference,
   type ThemePreference,
@@ -43,6 +44,7 @@ const videoProfileOptions: VideoProfilePreference[] = [
 ];
 const imageOutputFormatOptions: ImageOutputFormatPreference[] = ["jpg", "webp", "png"];
 const imageQualityOptions: ImageQualityPreference[] = ["full", "balanced", "fast"];
+const hardwareAccelerationOptions: HardwareAccelerationPreference[] = ["enabled", "disabled"];
 const booleanOptions = [true, false] as const;
 
 function clampNonNegativeInteger(value: string): number {
@@ -137,6 +139,17 @@ function resolveImageQualityLabel(
   return t("settings.form.imageQuality.full");
 }
 
+function resolveHardwareAccelerationLabel(
+  value: HardwareAccelerationPreference,
+  t: (key: import("@/lib/i18n-messages").TranslationKey) => string,
+): string {
+  if (value === "enabled") {
+    return t("settings.form.videoHardwareAcceleration.enabled");
+  }
+
+  return t("settings.form.videoHardwareAcceleration.disabled");
+}
+
 export function SettingsForm() {
   const { theme, setTheme } = useTheme();
   const { languagePreference, resolvedLocale, setLanguagePreference, t } = useI18n();
@@ -149,6 +162,8 @@ export function SettingsForm() {
   const [imageQuality, setImageQuality] = useState<ImageQualityPreference>("full");
   const [videoAutoplay, setVideoAutoplay] = useState(true);
   const [videoMutedByDefault, setVideoMutedByDefault] = useState(true);
+  const [videoHardwareAcceleration, setVideoHardwareAcceleration] =
+    useState<HardwareAccelerationPreference>("disabled");
   const [hasLoadedSettings, setHasLoadedSettings] = useState(false);
   const [isResettingAllData, setIsResettingAllData] = useState(false);
   const [resetErrorMessage, setResetErrorMessage] = useState<string | null>(null);
@@ -168,6 +183,7 @@ export function SettingsForm() {
     setImageQuality(settings.imageQuality);
     setVideoAutoplay(settings.videoAutoplay);
     setVideoMutedByDefault(settings.videoMutedByDefault);
+    setVideoHardwareAcceleration(settings.videoHardwareAcceleration);
     setHasLoadedSettings(true);
   }, []);
 
@@ -188,6 +204,7 @@ export function SettingsForm() {
       imageQuality,
       videoAutoplay,
       videoMutedByDefault,
+      videoHardwareAcceleration,
     });
   }, [
     concurrentDownloads,
@@ -201,6 +218,7 @@ export function SettingsForm() {
     imageQuality,
     videoAutoplay,
     videoMutedByDefault,
+    videoHardwareAcceleration,
     theme,
   ]);
 
@@ -249,6 +267,10 @@ export function SettingsForm() {
 
   const onVideoMutedByDefaultChange = (event: ChangeEvent<HTMLSelectElement>) => {
     setVideoMutedByDefault(event.target.value === "true");
+  };
+
+  const onVideoHardwareAccelerationChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    setVideoHardwareAcceleration(event.target.value as HardwareAccelerationPreference);
   };
 
   const onResetAllData = async () => {
@@ -576,6 +598,24 @@ export function SettingsForm() {
               {booleanOptions.map((value) => (
                 <option key={String(value)} value={String(value)}>
                   {value ? t("settings.form.boolean.true") : t("settings.form.boolean.false")}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="video-hardware-accel" className="text-sm font-medium">
+              {t("settings.form.videoHardwareAcceleration")}
+            </label>
+            <select
+              id="video-hardware-accel"
+              value={videoHardwareAcceleration}
+              onChange={onVideoHardwareAccelerationChange}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              {hardwareAccelerationOptions.map((option) => (
+                <option key={option} value={option}>
+                  {resolveHardwareAccelerationLabel(option, t)}
                 </option>
               ))}
             </select>
