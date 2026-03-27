@@ -615,19 +615,20 @@ export function Grid({ rows, onItemSelect }: GridProps) {
                       </TooltipTrigger>
                       <TooltipContent
                         sideOffset={6}
-                        className="max-w-50 space-y-1 text-xs"
+                        variant="popover"
+                        className="max-w-52"
                       >
-                            <div className="flex gap-1.5">
-                              <span className="text-background/60">{t("viewer.grid.tooltip.date")}:</span>
+                            <div className="flex items-start gap-1.5">
+                              <span className="shrink-0 text-muted-foreground">{t("viewer.grid.tooltip.date")}:</span>
                               <span>{fullDate}</span>
                             </div>
-                            <div className="flex gap-1.5">
-                              <span className="text-background/60">{t("viewer.grid.tooltip.type")}:</span>
+                            <div className="flex items-start gap-1.5">
+                              <span className="shrink-0 text-muted-foreground">{t("viewer.grid.tooltip.type")}:</span>
                               <span>{typeLabel}</span>
                             </div>
                             {item.location ? (
-                              <div className="flex gap-1.5">
-                                <span className="text-background/60">{t("viewer.grid.tooltip.location")}:</span>
+                              <div className="flex items-start gap-1.5">
+                                <span className="shrink-0 text-muted-foreground">{t("viewer.grid.tooltip.location")}:</span>
                                 <span>{item.location}</span>
                               </div>
                             ) : null}
