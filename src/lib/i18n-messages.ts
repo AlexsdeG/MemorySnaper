@@ -2,12 +2,12 @@ import { type ResolvedLocale } from "@/lib/language";
 
 const enMessages = {
   "app.header.title": "MemorySnaper",
-  "app.tabs.downloader": "Downloader",
+  "app.tabs.downloader": "Extractor",
   "app.tabs.viewer": "Viewer",
   "app.tabs.settings": "Settings",
   "app.header.subtitle": "Your Snapchat memories, local and private",
   "app.header.tagline": "Local Snapchat vault",
-  "app.section.downloader": "Downloader section",
+  "app.section.downloader": "Extractor section",
   "app.section.viewer": "Viewer section",
   "app.section.settings": "Settings section",
   "settings.form.accentColor": "Accent color",
@@ -90,10 +90,10 @@ const enMessages = {
   "settings.form.viewerExport.error": "Viewer export failed. Please try again.",
   "settings.form.startupPage": "Startup page",
   "settings.form.startupPage.system": "System (dynamic)",
-  "settings.form.startupPage.downloader": "Downloader",
+  "settings.form.startupPage.downloader": "Extractor",
   "settings.form.startupPage.viewer": "Viewer",
 
-  "downloader.card.title": "Downloader",
+  "downloader.card.title": "Extractor",
   "downloader.card.description": "Import Snapchat export data and download queued memories.",
   "downloader.workflow.upload.title": "Upload Snapchat Export",
   "downloader.workflow.upload.description":
@@ -290,12 +290,12 @@ export type TranslationParams = Record<string, string | number>;
 
 const deMessages: Record<TranslationKey, string> = {
   "app.header.title": "MemorySnaper",
-  "app.tabs.downloader": "Downloader",
+  "app.tabs.downloader": "Extraktor",
   "app.tabs.viewer": "Betrachter",
   "app.tabs.settings": "Einstellungen",
   "app.header.subtitle": "Deine Snapchat-Erinnerungen, lokal und privat",
   "app.header.tagline": "Lokaler Snapchat-Tresor",
-  "app.section.downloader": "Downloader-Bereich",
+  "app.section.downloader": "Extraktor-Bereich",
   "app.section.viewer": "Betrachter-Bereich",
   "app.section.settings": "Einstellungsbereich",
   "settings.form.accentColor": "Akzentfarbe",
@@ -378,10 +378,10 @@ const deMessages: Record<TranslationKey, string> = {
   "settings.form.viewerExport.error": "Viewer-Export fehlgeschlagen. Bitte erneut versuchen.",
   "settings.form.startupPage": "Startseite",
   "settings.form.startupPage.system": "System (dynamisch)",
-  "settings.form.startupPage.downloader": "Downloader",
+  "settings.form.startupPage.downloader": "Extraktor",
   "settings.form.startupPage.viewer": "Betrachter",
 
-  "downloader.card.title": "Downloader",
+  "downloader.card.title": "Extraktor",
   "downloader.card.description":
     "Snapchat-Exportdaten importieren und ausstehende Erinnerungen herunterladen.",
   "downloader.workflow.upload.title": "Snapchat-Export hochladen",
