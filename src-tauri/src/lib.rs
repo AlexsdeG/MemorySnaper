@@ -4,9 +4,11 @@ pub mod db;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::Row;
+use std::sync::Mutex;
 use tauri::{Emitter, Manager};
 
 const VIEWER_ARCHIVE_MANIFEST_NAME: &str = "viewer_manifest.json";
+const APP_CONFIG_FILENAME: &str = "config.json";
 
 const MAX_PERSISTED_RETRY_ATTEMPTS: i64 = 3;
 const PROCESS_PROGRESS_EVENT: &str = "process-progress";
@@ -92,6 +94,69 @@ struct ProcessUnit {
     memory_item_ids: Vec<i64>,
     date_taken: String,
     location: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct AppConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    export_path: Option<String>,
+}
+
+struct AppConfigState(Mutex<AppConfig>);
+
+fn app_config_file_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("failed to resolve app data directory: {error}"))?;
+    std::fs::create_dir_all(&app_data_dir)
+        .map_err(|error| format!("failed to create app data directory: {error}"))?;
+    Ok(app_data_dir.join(APP_CONFIG_FILENAME))
+}
+
+fn load_app_config(app: &tauri::AppHandle) -> AppConfig {
+    let config_path = match app_config_file_path(app) {
+        Ok(path) => path,
+        Err(_) => return AppConfig::default(),
+    };
+    if !config_path.exists() {
+        return AppConfig::default();
+    }
+    match std::fs::read_to_string(&config_path) {
+        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+        Err(_) => AppConfig::default(),
+    }
+}
+
+fn save_app_config(app: &tauri::AppHandle, config: &AppConfig) -> Result<(), String> {
+    let config_path = app_config_file_path(app)?;
+    let content = serde_json::to_string_pretty(config)
+        .map_err(|error| format!("failed to serialize app config: {error}"))?;
+    std::fs::write(&config_path, content)
+        .map_err(|error| format!("failed to write app config: {error}"))?;
+    Ok(())
+}
+
+fn resolve_base_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let config_state = app.state::<AppConfigState>();
+    let config = config_state.0.lock().map_err(|error| format!("config lock poisoned: {error}"))?;
+    if let Some(ref custom_path) = config.export_path {
+        let path = std::path::PathBuf::from(custom_path);
+        if path.is_absolute() {
+            return Ok(path);
+        }
+    }
+    app.path()
+        .app_data_dir()
+        .map_err(|error| format!("failed to resolve app data directory: {error}"))
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiskSpaceInfo {
+    total_bytes: u64,
+    free_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -276,17 +341,14 @@ async fn latest_export_job_id(pool: &sqlx::SqlitePool) -> Result<Option<String>,
 }
 
 fn memories_db_url(app: &tauri::AppHandle) -> Result<String, String> {
-    let mut app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| format!("failed to resolve app data directory: {error}"))?;
+    let mut base_dir = resolve_base_dir(app)?;
 
-    std::fs::create_dir_all(&app_data_dir)
-        .map_err(|error| format!("failed to create app data directory: {error}"))?;
+    std::fs::create_dir_all(&base_dir)
+        .map_err(|error| format!("failed to create base directory: {error}"))?;
 
-    app_data_dir.push("memories.db");
+    base_dir.push("memories.db");
 
-    Ok(core::sqlite_url_from_path(&app_data_dir))
+    Ok(core::sqlite_url_from_path(&base_dir))
 }
 
 fn resolve_output_dir(app: &tauri::AppHandle, output_dir: &str) -> Result<std::path::PathBuf, String> {
@@ -295,16 +357,13 @@ fn resolve_output_dir(app: &tauri::AppHandle, output_dir: &str) -> Result<std::p
         return Ok(requested_path);
     }
 
-    let mut app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| format!("failed to resolve app data directory for output dir: {error}"))?;
+    let mut base_dir = resolve_base_dir(app)?;
 
-    std::fs::create_dir_all(&app_data_dir)
-        .map_err(|error| format!("failed to create app data directory for output dir: {error}"))?;
+    std::fs::create_dir_all(&base_dir)
+        .map_err(|error| format!("failed to create base directory for output dir: {error}"))?;
 
-    app_data_dir.push(requested_path);
-    Ok(app_data_dir)
+    base_dir.push(requested_path);
+    Ok(base_dir)
 }
 
 async fn sqlite_column_exists(
@@ -347,18 +406,15 @@ async fn ensure_sqlite_column(
 }
 
     async fn setup_database(app: &tauri::AppHandle) -> Result<(), String> {
-        let mut app_data_dir = app
-            .path()
-            .app_data_dir()
-            .map_err(|error| format!("failed to resolve app data directory: {error}"))?;
+        let mut base_dir = resolve_base_dir(app)?;
 
-        std::fs::create_dir_all(&app_data_dir)
-            .map_err(|error| format!("failed to create app data directory: {error}"))?;
+        std::fs::create_dir_all(&base_dir)
+            .map_err(|error| format!("failed to create base directory for database: {error}"))?;
 
-        app_data_dir.push("memories.db");
+        base_dir.push("memories.db");
 
         let connect_options = SqliteConnectOptions::new()
-            .filename(&app_data_dir)
+            .filename(&base_dir)
             .create_if_missing(true);
 
         let pool = sqlx::SqlitePool::connect_with(connect_options)
@@ -2554,6 +2610,75 @@ fn open_media_folder(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn get_export_path(app: tauri::AppHandle) -> Result<String, String> {
+    let base = resolve_base_dir(&app)?;
+    Ok(base.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn get_default_export_path(app: tauri::AppHandle) -> Result<String, String> {
+    app.path()
+        .app_data_dir()
+        .map(|path| path.to_string_lossy().to_string())
+        .map_err(|error| format!("failed to resolve app data directory: {error}"))
+}
+
+#[tauri::command]
+fn set_export_path(app: tauri::AppHandle, path: Option<String>) -> Result<String, String> {
+    if let Some(ref custom_path) = path {
+        let target = std::path::Path::new(custom_path);
+        if !target.is_absolute() {
+            return Err("export path must be absolute".to_string());
+        }
+        std::fs::create_dir_all(target)
+            .map_err(|error| format!("cannot create export directory: {error}"))?;
+
+        // Verify writable by creating and immediately removing a probe file
+        let probe = target.join(".memorysnaper_probe");
+        std::fs::write(&probe, b"probe")
+            .map_err(|_| "export directory is not writable".to_string())?;
+        let _ = std::fs::remove_file(&probe);
+    }
+
+    {
+        let config_state = app.state::<AppConfigState>();
+        let mut config = config_state.0.lock().map_err(|error| format!("config lock poisoned: {error}"))?;
+        config.export_path = path;
+        save_app_config(&app, &config)?;
+    }
+
+    // Allow the asset protocol to serve files from the new path
+    let scope = app.asset_protocol_scope();
+    let new_base = resolve_base_dir(&app)?;
+    let _ = scope.allow_directory(&new_base, true);
+
+    let resolved = resolve_base_dir(&app)?;
+    Ok(resolved.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn get_disk_space(path: String) -> Result<DiskSpaceInfo, String> {
+    let target = std::path::Path::new(&path);
+    let lookup_path = if target.exists() {
+        target.to_path_buf()
+    } else if let Some(parent) = target.parent() {
+        if parent.exists() { parent.to_path_buf() } else { target.to_path_buf() }
+    } else {
+        target.to_path_buf()
+    };
+
+    let total_bytes = fs2::total_space(&lookup_path)
+        .map_err(|error| format!("failed to read total disk space: {error}"))? as u64;
+    let free_bytes = fs2::available_space(&lookup_path)
+        .map_err(|error| format!("failed to read available disk space: {error}"))? as u64;
+
+    Ok(DiskSpaceInfo {
+        total_bytes,
+        free_bytes,
+    })
+}
+
 fn find_output_file_for_memory_item(
     output_dir: &std::path::Path,
     memory_item_id: i64,
@@ -3451,6 +3576,18 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // Load persisted config (export path) before anything else
+            let config = load_app_config(app.handle());
+            app.manage(AppConfigState(Mutex::new(config.clone())));
+
+            // If a custom export path is configured, allow asset protocol access
+            if config.export_path.is_some() {
+                if let Ok(base) = resolve_base_dir(app.handle()) {
+                    let scope = app.asset_protocol_scope();
+                    let _ = scope.allow_directory(&base, true);
+                }
+            }
+
             tauri::async_runtime::block_on(setup_database(app.handle()))
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             let database_url = memories_db_url(app.handle())
@@ -3491,7 +3628,11 @@ pub fn run() {
             create_settings_media_backup_zip,
             create_viewer_export_zip,
             import_viewer_export_zip,
-            reset_all_app_data
+            reset_all_app_data,
+            get_export_path,
+            get_default_export_path,
+            set_export_path,
+            get_disk_space
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

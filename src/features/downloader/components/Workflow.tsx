@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Archive, PackageOpen } from "lucide-react";
+import { Archive, PackageOpen, FolderOpen } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { DOWNLOADER_SESSION_STORAGE_KEY, readAppSettings } from "@/lib/app-settings";
+import { DOWNLOADER_SESSION_STORAGE_KEY, readAppSettings, writeAppSettings } from "@/lib/app-settings";
 import { ActionBar } from "@/features/downloader/components/ActionBar";
 import { LiveConsole } from "@/features/downloader/components/LiveConsole";
 import { ProgressOverview } from "@/features/downloader/components/ProgressOverview";
@@ -14,6 +14,7 @@ import { ZipStatus } from "@/features/downloader/components/ZipStatus";
 import { useI18n } from "@/lib/i18n";
 import {
   finalizeZipSession,
+  getExportPath,
   getProcessingSessionOverview,
   importMemoriesFromZip,
   importViewerExportZip,
@@ -24,6 +25,7 @@ import {
   onSessionLog,
   processMemoriesFromZipArchives,
   resumeProcessingSession,
+  setExportPath,
   setProcessingPaused,
   stopProcessingSession,
   validateBaseZipArchive,
@@ -102,6 +104,11 @@ export function Workflow() {
   const [processProgress, setProcessProgress] = useState<RuntimeProgress | null>(null);
   const [storageHydrated, setStorageHydrated] = useState(false);
   const [isImportingViewerArchive, setIsImportingViewerArchive] = useState(false);
+  const [currentExportPath, setCurrentExportPath] = useState<string>("");
+
+  useEffect(() => {
+    void getExportPath().then(setCurrentExportPath);
+  }, []);
 
   useEffect(() => {
     try {
@@ -490,6 +497,25 @@ export function Workflow() {
     return ordered;
   };
 
+  const onChangeExportPath = async () => {
+    try {
+      const picked = await open({
+        title: t("settings.form.exportPath.dialogTitle"),
+        directory: true,
+        multiple: false,
+      });
+      if (!picked || typeof picked !== "string") {
+        return;
+      }
+      const resolved = await setExportPath(picked);
+      setCurrentExportPath(resolved);
+      const settings = readAppSettings();
+      writeAppSettings({ ...settings, exportPath: picked });
+    } catch {
+      // silently ignore — not critical in extractor context
+    }
+  };
+
   const onPickZipFiles = async () => {
     try {
       const picked = await open({
@@ -808,6 +834,27 @@ export function Workflow() {
           />
         </div>
       </div>
+
+      {/* Export path display */}
+      {currentExportPath && (
+        <div className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2">
+          <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={currentExportPath}>
+            <span className="font-medium text-foreground">{t("downloader.exportPath.label")}:</span>{" "}
+            {currentExportPath}
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => { void onChangeExportPath(); }}
+            disabled={isWorking}
+            className="h-6 shrink-0 px-2 text-[11px] text-muted-foreground hover:text-primary"
+          >
+            {t("downloader.exportPath.change")}
+          </Button>
+        </div>
+      )}
 
       {/* Action Bar */}
       <ActionBar

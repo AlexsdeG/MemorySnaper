@@ -93,6 +93,21 @@ const enMessages = {
   "settings.form.startupPage.downloader": "Extractor",
   "settings.form.startupPage.viewer": "Viewer",
 
+  "settings.form.section.storageLocation": "Storage Location",
+  "settings.form.exportPath.label": "Export folder",
+  "settings.form.exportPath.description":
+    "Choose where processed media and the database are stored. Defaults to app data.",
+  "settings.form.exportPath.default": "Default (app data)",
+  "settings.form.exportPath.change": "Change",
+  "settings.form.exportPath.reset": "Reset to default",
+  "settings.form.exportPath.dialogTitle": "Select export folder",
+  "settings.form.exportPath.success": "Export folder updated.",
+  "settings.form.exportPath.error": "Could not set export folder. Please try again.",
+  "settings.form.exportPath.resetSuccess": "Export folder reset to default.",
+
+  "downloader.exportPath.label": "Export location",
+  "downloader.exportPath.change": "Change",
+
   "downloader.card.title": "Extractor",
   "downloader.card.description": "Import Snapchat export data and download queued memories.",
   "downloader.workflow.upload.title": "Upload Snapchat Export",
@@ -382,6 +397,21 @@ const deMessages: Record<TranslationKey, string> = {
   "settings.form.startupPage.system": "System (dynamisch)",
   "settings.form.startupPage.downloader": "Extraktor",
   "settings.form.startupPage.viewer": "Betrachter",
+
+  "settings.form.section.storageLocation": "Speicherort",
+  "settings.form.exportPath.label": "Export-Ordner",
+  "settings.form.exportPath.description":
+    "Wähle aus, wo verarbeitete Medien und die Datenbank gespeichert werden. Standard ist der App-Datenordner.",
+  "settings.form.exportPath.default": "Standard (App-Daten)",
+  "settings.form.exportPath.change": "Ändern",
+  "settings.form.exportPath.reset": "Auf Standard zurücksetzen",
+  "settings.form.exportPath.dialogTitle": "Export-Ordner auswählen",
+  "settings.form.exportPath.success": "Export-Ordner aktualisiert.",
+  "settings.form.exportPath.error": "Export-Ordner konnte nicht gesetzt werden. Bitte erneut versuchen.",
+  "settings.form.exportPath.resetSuccess": "Export-Ordner auf Standard zurückgesetzt.",
+
+  "downloader.exportPath.label": "Exportziel",
+  "downloader.exportPath.change": "Ändern",
 
   "downloader.card.title": "Extraktor",
   "downloader.card.description":

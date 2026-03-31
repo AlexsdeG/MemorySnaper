@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTheme } from "next-themes";
-import { save } from "@tauri-apps/plugin-dialog";
-import { Loader2, Monitor, Moon, Sun } from "lucide-react";
+import { save, open } from "@tauri-apps/plugin-dialog";
+import { Loader2, Monitor, Moon, Sun, FolderOpen, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -54,7 +54,10 @@ import type { TranslationKey } from "@/lib/i18n-messages";
 import {
   createSettingsMediaBackupZip,
   createViewerExportZip,
+  getDefaultExportPath,
+  getExportPath,
   resetAllAppData,
+  setExportPath,
 } from "@/lib/memories-api";
 import { cn } from "@/lib/utils";
 
@@ -173,6 +176,9 @@ export function SettingsForm() {
   const [isCreatingBackup, setIsCreatingBackup] = useState(false);
   const [isCreatingViewerExport, setIsCreatingViewerExport] = useState(false);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [currentExportPath, setCurrentExportPath] = useState<string>("");
+  const [defaultExportPath, setDefaultExportPath] = useState<string>("");
+  const [isChangingExportPath, setIsChangingExportPath] = useState(false);
 
   useEffect(() => {
     const settings = readAppSettings();
@@ -188,6 +194,11 @@ export function SettingsForm() {
     setVideoHardwareAcceleration(settings.videoHardwareAcceleration);
     setAccentColor(settings.accentColor);
     setHasLoadedSettings(true);
+
+    void Promise.all([getExportPath(), getDefaultExportPath()]).then(([current, defaultP]) => {
+      setCurrentExportPath(current);
+      setDefaultExportPath(defaultP);
+    });
   }, []);
 
   useEffect(() => {
@@ -209,6 +220,7 @@ export function SettingsForm() {
       videoMutedByDefault,
       videoHardwareAcceleration,
       accentColor,
+      exportPath: currentExportPath !== defaultExportPath ? currentExportPath : null,
     });
   }, [
     accentColor,
@@ -237,6 +249,59 @@ export function SettingsForm() {
   const onAccentColorChange = (color: AccentColor) => {
     setAccentColor(color);
     applyAccentColor(color);
+  };
+
+  const isCustomExportPath = currentExportPath !== "" && currentExportPath !== defaultExportPath;
+
+  const onChangeExportPath = async () => {
+    if (isChangingExportPath) {
+      return;
+    }
+
+    setIsChangingExportPath(true);
+    try {
+      const picked = await open({
+        title: t("settings.form.exportPath.dialogTitle"),
+        directory: true,
+        multiple: false,
+      });
+      if (!picked || typeof picked !== "string") {
+        return;
+      }
+
+      const resolved = await setExportPath(picked);
+      setCurrentExportPath(resolved);
+
+      const settings = readAppSettings();
+      writeAppSettings({ ...settings, exportPath: picked });
+
+      toast.success(t("settings.form.exportPath.success"));
+    } catch {
+      toast.error(t("settings.form.exportPath.error"));
+    } finally {
+      setIsChangingExportPath(false);
+    }
+  };
+
+  const onResetExportPath = async () => {
+    if (isChangingExportPath) {
+      return;
+    }
+
+    setIsChangingExportPath(true);
+    try {
+      const resolved = await setExportPath(null);
+      setCurrentExportPath(resolved);
+
+      const settings = readAppSettings();
+      writeAppSettings({ ...settings, exportPath: null });
+
+      toast.success(t("settings.form.exportPath.resetSuccess"));
+    } catch {
+      toast.error(t("settings.form.exportPath.error"));
+    } finally {
+      setIsChangingExportPath(false);
+    }
   };
 
   const onResetAllData = async () => {
@@ -569,6 +634,52 @@ export function SettingsForm() {
 
       {/* ── Data ── */}
       <TabsContent value="data" className="space-y-6 pt-4 pb-8">
+        {/* Storage Location */}
+        <div className="space-y-3">
+          <Label className="text-sm font-medium">{t("settings.form.section.storageLocation")}</Label>
+          <p className="text-xs text-muted-foreground">{t("settings.form.exportPath.description")}</p>
+
+          <div className="flex items-center gap-2 rounded-md bg-muted/40 px-3 py-2">
+            <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={currentExportPath}>
+              {isCustomExportPath ? currentExportPath : t("settings.form.exportPath.default")}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isChangingExportPath}
+              onClick={() => { void onChangeExportPath(); }}
+              className="gap-1.5"
+            >
+              {isChangingExportPath ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <FolderOpen className="h-3.5 w-3.5" />
+              )}
+              {t("settings.form.exportPath.change")}
+            </Button>
+            {isCustomExportPath && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={isChangingExportPath}
+                onClick={() => { void onResetExportPath(); }}
+                className="gap-1.5 text-muted-foreground"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                {t("settings.form.exportPath.reset")}
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <Separator />
+
         {/* Backup & Export */}
         <div className="space-y-3">
           <Label className="text-sm font-medium">{t("settings.form.section.backupExport")}</Label>

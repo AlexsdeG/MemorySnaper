@@ -285,6 +285,27 @@ export async function openMediaFolder(): Promise<void> {
   return invoke<void>("open_media_folder");
 }
 
+export type DiskSpaceInfo = {
+  totalBytes: number;
+  freeBytes: number;
+};
+
+export async function getExportPath(): Promise<string> {
+  return invoke<string>("get_export_path");
+}
+
+export async function getDefaultExportPath(): Promise<string> {
+  return invoke<string>("get_default_export_path");
+}
+
+export async function setExportPath(path: string | null): Promise<string> {
+  return invoke<string>("set_export_path", { path });
+}
+
+export async function getDiskSpace(path: string): Promise<DiskSpaceInfo> {
+  return invoke<DiskSpaceInfo>("get_disk_space", { path });
+}
+
 export async function onDownloadProgress(
   callback: (payload: DownloadProgressPayload) => void,
 ): Promise<UnlistenFn> {

@@ -32,6 +32,7 @@ export type AppSettings = {
   videoMutedByDefault: boolean;
   videoHardwareAcceleration: HardwareAccelerationPreference;
   accentColor: AccentColor;
+  exportPath: string | null;
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -48,6 +49,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   videoMutedByDefault: true,
   videoHardwareAcceleration: "disabled",
   accentColor: "yellow",
+  exportPath: null,
 };
 
 function parseBooleanSetting(value: unknown, fallback: boolean): boolean {
@@ -214,6 +216,10 @@ function parseSettings(rawValue: string): AppSettings | null {
         ? (Reflect.get(parsedValue, "accentColor") as string)
         : null,
     );
+    const rawExportPath = Reflect.get(parsedValue, "exportPath");
+    const exportPath = typeof rawExportPath === "string" && rawExportPath.length > 0
+      ? rawExportPath
+      : null;
 
     return {
       requestsPerMinute,
@@ -229,6 +235,7 @@ function parseSettings(rawValue: string): AppSettings | null {
       videoMutedByDefault,
       videoHardwareAcceleration,
       accentColor,
+      exportPath,
     };
   } catch {
     return null;
