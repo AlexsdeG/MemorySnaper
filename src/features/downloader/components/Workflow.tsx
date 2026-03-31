@@ -12,6 +12,8 @@ import { ProgressOverview } from "@/features/downloader/components/ProgressOverv
 import { ZipSelector } from "@/features/downloader/components/ZipSelector";
 import { ZipStatus } from "@/features/downloader/components/ZipStatus";
 import { StorageBar, estimateRequiredBytes, formatBytes } from "@/features/downloader/components/StorageBar";
+import { Disclaimers } from "@/features/downloader/components/Disclaimers";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useI18n } from "@/lib/i18n";
 import {
   finalizeZipSession,
@@ -108,6 +110,11 @@ export function Workflow() {
   const [storageHydrated, setStorageHydrated] = useState(false);
   const [isImportingViewerArchive, setIsImportingViewerArchive] = useState(false);
   const [currentExportPath, setCurrentExportPath] = useState<string>("");
+  const [storageAcknowledged, setStorageAcknowledged] = useState(false);
+  const [hardwareAcknowledged, setHardwareAcknowledged] = useState(false);
+  const [estimatedBytes, setEstimatedBytes] = useState(0);
+
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     void getExportPath().then(setCurrentExportPath);
@@ -411,7 +418,11 @@ export function Workflow() {
   }, [processProgress?.completedFiles, processedFiles, duplicatesSkipped, totalFiles]);
 
   const isWorking = importState !== "idle";
-  const canStart = selectedZipPaths.length > 0 && (!isWorking || isStopped);
+  const showHardwareDisclaimer = isMobile || selectedZipPaths.length > 4;
+  const disclaimersAcknowledged =
+    storageAcknowledged && (!showHardwareDisclaimer || hardwareAcknowledged);
+  const canStart =
+    selectedZipPaths.length > 0 && (!isWorking || isStopped) && disclaimersAcknowledged;
   const canPauseOrStop = isWorking && !isStopped;
   const canClear =
     (selectedZipPaths.length > 0 || jobId !== null || finishedZipFiles.length > 0 || logLines.length > 0) &&
@@ -541,6 +552,8 @@ export function Workflow() {
       setSelectedZipPaths(normalized);
       setValidationState("idle");
       setValidationMessage("");
+      setStorageAcknowledged(false);
+      setHardwareAcknowledged(false);
       setNotice(`${normalized.length} ZIP file(s) selected.`, "success");
     } catch (error) {
       console.error("[downloader] Failed to open ZIP picker", error);
@@ -741,6 +754,9 @@ export function Workflow() {
     setLogLines([]);
     setValidationState("idle");
     setValidationMessage("");
+    setStorageAcknowledged(false);
+    setHardwareAcknowledged(false);
+    setEstimatedBytes(0);
     setNotice(t("downloader.workflow.status.idle"));
 
     try {
@@ -894,6 +910,19 @@ export function Workflow() {
         <StorageBar
           exportPath={currentExportPath}
           zipPaths={selectedZipPaths}
+          onEstimatedBytesChange={setEstimatedBytes}
+        />
+      )}
+
+      {/* Disclaimers */}
+      {selectedZipPaths.length > 0 && !isWorking && (
+        <Disclaimers
+          estimatedBytes={estimatedBytes}
+          zipCount={selectedZipPaths.length}
+          storageAcknowledged={storageAcknowledged}
+          hardwareAcknowledged={hardwareAcknowledged}
+          onStorageAcknowledgedChange={setStorageAcknowledged}
+          onHardwareAcknowledgedChange={setHardwareAcknowledged}
         />
       )}
 

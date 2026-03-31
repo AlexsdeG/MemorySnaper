@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { HardDrive, TriangleAlert } from "lucide-react";
 
 import { getDiskSpace, getFilesTotalSize, type DiskSpaceInfo } from "@/lib/memories-api";
@@ -27,9 +27,10 @@ function formatBytes(bytes: number): string {
 type StorageBarProps = {
   exportPath: string;
   zipPaths: string[];
+  onEstimatedBytesChange?: (bytes: number) => void;
 };
 
-export function StorageBar({ exportPath, zipPaths }: StorageBarProps) {
+export function StorageBar({ exportPath, zipPaths, onEstimatedBytesChange }: StorageBarProps) {
   const { t } = useI18n();
   const [diskSpace, setDiskSpace] = useState<DiskSpaceInfo | null>(null);
   const [totalZipBytes, setTotalZipBytes] = useState<number>(0);
@@ -57,6 +58,14 @@ export function StorageBar({ exportPath, zipPaths }: StorageBarProps) {
   const { totalBytes, freeBytes } = diskSpace;
   const usedBytes = totalBytes - freeBytes;
   const estimatedBytes = estimateRequiredBytes(totalZipBytes);
+
+  // Notify parent of the estimated size for disclaimer display
+  const prevEstimated = useRef(0);
+  if (estimatedBytes !== prevEstimated.current) {
+    prevEstimated.current = estimatedBytes;
+    onEstimatedBytesChange?.(estimatedBytes);
+  }
+
   const insufficient = estimatedBytes > freeBytes;
 
   // Percentages for bar segments (clamped to 100%)

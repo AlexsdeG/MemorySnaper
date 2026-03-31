@@ -117,6 +117,14 @@ const enMessages = {
   "downloader.storageBar.cancel": "Cancel",
   "downloader.storageBar.warningTitle": "Low Disk Space",
 
+  "downloader.disclaimer.storage.title": "Storage Notice",
+  "downloader.disclaimer.storage.body":
+    "Processing requires approximately {size} of free disk space. Make sure your export drive has enough room before starting.",
+  "downloader.disclaimer.hardware.title": "Hardware Recommendation",
+  "downloader.disclaimer.hardware.body":
+    "Large exports work best on a PC or laptop — background processing needs more RAM and stable power. Mobile devices may run out of memory or throttle.",
+  "downloader.disclaimer.acknowledge": "I understand",
+
   "downloader.card.title": "Extractor",
   "downloader.card.description": "Import Snapchat export data and download queued memories.",
   "downloader.workflow.upload.title": "Upload Snapchat Export",
@@ -430,6 +438,14 @@ const deMessages: Record<TranslationKey, string> = {
   "downloader.storageBar.proceedAnyway": "Trotzdem starten",
   "downloader.storageBar.cancel": "Abbrechen",
   "downloader.storageBar.warningTitle": "Wenig Speicherplatz",
+
+  "downloader.disclaimer.storage.title": "Speicherhinweis",
+  "downloader.disclaimer.storage.body":
+    "Die Verarbeitung benötigt etwa {size} freien Speicherplatz. Stelle sicher, dass auf deinem Exportlaufwerk genug Platz ist.",
+  "downloader.disclaimer.hardware.title": "Hardware-Empfehlung",
+  "downloader.disclaimer.hardware.body":
+    "Große Exporte funktionieren am besten auf einem PC oder Laptop — Hintergrundverarbeitung braucht mehr RAM und stabile Stromversorgung. Mobilgeräte könnten den Speicher überlasten oder drosseln.",
+  "downloader.disclaimer.acknowledge": "Verstanden",
 
   "downloader.card.title": "Extraktor",
   "downloader.card.description":
