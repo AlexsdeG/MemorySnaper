@@ -104,7 +104,17 @@ function clampNonNegativeInteger(value: string): number {
 }
 
 type ThemeOption = "light" | "dark" | "system";
-const languageOptions: LanguagePreference[] = ["system", "en", "de"];
+const languageOptions: LanguagePreference[] = [
+  "system",
+  "en",
+  "de",
+  "fr",
+  "es",
+  "it",
+  "pl",
+  "nl",
+  "pt",
+];
 
 function resolveThemePreference(value: string | undefined): ThemePreference {
   if (typeof value !== "string") {
@@ -150,6 +160,12 @@ const languageLabelKeys: Record<LanguagePreference, TranslationKey> = {
   system: "settings.form.language.system",
   en: "settings.form.language.en",
   de: "settings.form.language.de",
+  fr: "settings.form.language.fr",
+  es: "settings.form.language.es",
+  it: "settings.form.language.it",
+  pl: "settings.form.language.pl",
+  nl: "settings.form.language.nl",
+  pt: "settings.form.language.pt",
 };
 
 const startupPageLabelKeys: Record<StartupPagePreference, TranslationKey> = {

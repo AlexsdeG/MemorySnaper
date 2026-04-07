@@ -35,6 +35,7 @@ import {
 } from "@/features/viewer/viewer-filters";
 import { useI18n } from "@/lib/i18n";
 import type { TranslationKey } from "@/lib/i18n-messages";
+import { localizeCountryName } from "@/lib/country-localization";
 import { cn } from "@/lib/utils";
 import type { ViewerMediaKind } from "@/lib/memories-api";
 
@@ -80,11 +81,21 @@ export function ViewerFilterBar({
   open,
   onOpenChange,
 }: ViewerFilterBarProps) {
-  const { t } = useI18n();
+  const { t, resolvedLocale } = useI18n();
   const [isDateFromOpen, setIsDateFromOpen] = useState(false);
   const [isDateToOpen, setIsDateToOpen] = useState(false);
 
   const activeCount = useMemo(() => countActiveFilters(filters), [filters]);
+  const localizedCountries = useMemo(
+    () =>
+      filterMeta.uniqueCountries
+        .map((country) => ({
+          value: country,
+          label: localizeCountryName(country, resolvedLocale),
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label, resolvedLocale)),
+    [filterMeta.uniqueCountries, resolvedLocale],
+  );
 
   const patchFilters = (patch: Partial<ViewerFilterState>) => {
     onChange({ ...filters, ...patch });
@@ -317,25 +328,25 @@ export function ViewerFilterBar({
               {/* Countries */}
               <div className="space-y-2">
                 <SectionTitle>{t("viewer.filters.countries")}</SectionTitle>
-                {filterMeta.uniqueCountries.length === 0 ? (
+                {localizedCountries.length === 0 ? (
                   <p className="text-xs text-muted-foreground">{t("viewer.filters.noCountryMetadata")}</p>
                 ) : (
                   <div className="grid gap-1">
-                    {filterMeta.uniqueCountries.map((country) => (
-                      <Label key={country} className="text-sm font-normal">
+                    {localizedCountries.map((country) => (
+                      <Label key={country.value} className="text-sm font-normal">
                         <Checkbox
-                          checked={filters.countries.has(country)}
+                          checked={filters.countries.has(country.value)}
                           onCheckedChange={() => {
                             patchFilters({
                               countries: new Set(
-                                filters.countries.has(country)
-                                  ? [...filters.countries].filter((c) => c !== country)
-                                  : [...filters.countries, country],
+                                filters.countries.has(country.value)
+                                  ? [...filters.countries].filter((c) => c !== country.value)
+                                  : [...filters.countries, country.value],
                               ),
                             });
                           }}
                         />
-                        {country}
+                        {country.label}
                       </Label>
                     ))}
                   </div>

@@ -3,11 +3,23 @@
   "icon": "Download",
   "title": {
     "en": "How to Export Your Snapchat Data",
-    "de": "So exportierst du deine Snapchat-Daten"
+    "de": "So exportierst du deine Snapchat-Daten",
+    "fr": "Comment exporter vos donnees Snapchat",
+    "es": "Como exportar tus datos de Snapchat",
+    "it": "Come esportare i tuoi dati Snapchat",
+    "pl": "Jak wyeksportowac swoje dane Snapchat",
+    "nl": "Hoe exporteer je je Snapchat-gegevens",
+    "pt": "Como exportar os teus dados do Snapchat"
   },
   "description": {
     "en": "Step-by-step guide to request and download your Snapchat memories ZIP export.",
-    "de": "Schritt-für-Schritt-Anleitung zum Anfordern und Herunterladen deines Snapchat-Erinnerungen-ZIP-Exports."
+    "de": "Schritt-für-Schritt-Anleitung zum Anfordern und Herunterladen deines Snapchat-Erinnerungen-ZIP-Exports.",
+    "fr": "Guide pas a pas pour demander et telecharger votre export ZIP de souvenirs Snapchat.",
+    "es": "Guia paso a paso para solicitar y descargar tu exportacion ZIP de recuerdos de Snapchat.",
+    "it": "Guida passo passo per richiedere e scaricare la tua esportazione ZIP dei ricordi Snapchat.",
+    "pl": "Przewodnik krok po kroku, jak poprosic o eksport ZIP wspomnien Snapchat i go pobrac.",
+    "nl": "Stapsgewijze gids om je Snapchat-herinneringen als ZIP-export aan te vragen en te downloaden.",
+    "pt": "Guia passo a passo para pedires e descarregares a exportacao ZIP das tuas memorias do Snapchat."
   },
   "relatedPage": "downloader",
   "pages": [
@@ -15,54 +27,114 @@
       "image": "/tutorials/snapchat-export/step1.svg",
       "title": {
         "en": "Open Snapchat Settings",
-        "de": "Snapchat-Einstellungen öffnen"
+        "de": "Snapchat-Einstellungen öffnen",
+        "fr": "Ouvrir les parametres Snapchat",
+        "es": "Abrir la configuracion de Snapchat",
+        "it": "Apri le impostazioni di Snapchat",
+        "pl": "Otworz ustawienia Snapchat",
+        "nl": "Open Snapchat-instellingen",
+        "pt": "Abrir definicoes do Snapchat"
       },
       "body": {
         "en": "Open Snapchat on your phone. Tap your profile icon (top-left), then tap the gear icon (top-right) to open Settings.",
-        "de": "Öffne Snapchat auf deinem Handy. Tippe auf dein Profilbild (oben links), dann auf das Zahnrad-Symbol (oben rechts), um die Einstellungen zu öffnen."
+        "de": "Öffne Snapchat auf deinem Handy. Tippe auf dein Profilbild (oben links), dann auf das Zahnrad-Symbol (oben rechts), um die Einstellungen zu öffnen.",
+        "fr": "Ouvrez Snapchat sur votre telephone. Appuyez sur votre icone de profil (en haut a gauche), puis sur l'icone engrenage (en haut a droite) pour ouvrir les parametres.",
+        "es": "Abre Snapchat en tu telefono. Toca el icono de tu perfil (arriba a la izquierda) y luego el icono de engranaje (arriba a la derecha) para abrir Configuracion.",
+        "it": "Apri Snapchat sul tuo telefono. Tocca l'icona del profilo (in alto a sinistra), poi l'icona a ingranaggio (in alto a destra) per aprire le Impostazioni.",
+        "pl": "Otworz Snapchat na telefonie. Dotknij ikony profilu (u gory po lewej), a nastepnie ikony kola zebatego (u gory po prawej), aby otworzyc Ustawienia.",
+        "nl": "Open Snapchat op je telefoon. Tik op je profielicoon (linksboven) en daarna op het tandwielicoon (rechtsboven) om Instellingen te openen.",
+        "pt": "Abre o Snapchat no teu telefone. Toca no icone do teu perfil (canto superior esquerdo) e depois no icone de engrenagem (canto superior direito) para abrir as Definicoes."
       }
     },
     {
       "image": "/tutorials/snapchat-export/step2.svg",
       "title": {
         "en": "Go to 'My Data'",
-        "de": "'Meine Daten' aufrufen"
+        "de": "'Meine Daten' aufrufen",
+        "fr": "Aller dans 'Mes donnees'",
+        "es": "Ir a 'Mis datos'",
+        "it": "Vai su 'I miei dati'",
+        "pl": "Przejdz do 'Moje dane'",
+        "nl": "Ga naar 'Mijn gegevens'",
+        "pt": "Ir para 'Os meus dados'"
       },
       "body": {
         "en": "Scroll down in Settings and tap 'My Data' under the 'Privacy Controls' section.",
-        "de": "Scrolle in den Einstellungen nach unten und tippe unter 'Datenschutz' auf 'Meine Daten'."
+        "de": "Scrolle in den Einstellungen nach unten und tippe unter 'Datenschutz' auf 'Meine Daten'.",
+        "fr": "Faites defiler les parametres vers le bas et appuyez sur 'Mes donnees' dans la section 'Controle de la confidentialite'.",
+        "es": "Desplazate hacia abajo en Configuracion y toca 'Mis datos' en la seccion 'Controles de privacidad'.",
+        "it": "Scorri verso il basso nelle Impostazioni e tocca 'I miei dati' nella sezione 'Controlli privacy'.",
+        "pl": "Przewin w dol w Ustawieniach i dotknij 'Moje dane' w sekcji 'Kontrola prywatnosci'.",
+        "nl": "Scroll omlaag in Instellingen en tik op 'Mijn gegevens' onder de sectie 'Privacybeheer'.",
+        "pt": "Desce nas Definicoes e toca em 'Os meus dados' na secao 'Controlos de privacidade'."
       }
     },
     {
       "image": "/tutorials/snapchat-export/step3.svg",
       "title": {
         "en": "Request Your Data Export",
-        "de": "Datenexport anfordern"
+        "de": "Datenexport anfordern",
+        "fr": "Demander votre export de donnees",
+        "es": "Solicitar tu exportacion de datos",
+        "it": "Richiedi l'esportazione dei dati",
+        "pl": "Popros o eksport swoich danych",
+        "nl": "Vraag je data-export aan",
+        "pt": "Pedir a exportacao dos teus dados"
       },
       "body": {
         "en": "On the 'My Data' page, scroll to the bottom and tap 'Submit Request'. Snapchat will prepare your data export — this can take a few hours to several days.",
-        "de": "Scrolle auf der Seite 'Meine Daten' ganz nach unten und tippe auf 'Anfrage senden'. Snapchat bereitet deinen Datenexport vor — das kann einige Stunden bis mehrere Tage dauern."
+        "de": "Scrolle auf der Seite 'Meine Daten' ganz nach unten und tippe auf 'Anfrage senden'. Snapchat bereitet deinen Datenexport vor — das kann einige Stunden bis mehrere Tage dauern.",
+        "fr": "Sur la page 'Mes donnees', faites defiler jusqu'en bas puis appuyez sur 'Envoyer la demande'. Snapchat preparera votre export de donnees — cela peut prendre de quelques heures a plusieurs jours.",
+        "es": "En la pagina 'Mis datos', desplaza hasta abajo y toca 'Enviar solicitud'. Snapchat preparara tu exportacion de datos — esto puede tardar desde unas horas hasta varios dias.",
+        "it": "Nella pagina 'I miei dati', scorri in basso e tocca 'Invia richiesta'. Snapchat preparera la tua esportazione dati — possono volerci da alcune ore a diversi giorni.",
+        "pl": "Na stronie 'Moje dane' przewin na dol i dotknij 'Wyslij prosbe'. Snapchat przygotuje eksport Twoich danych — moze to potrwac od kilku godzin do kilku dni.",
+        "nl": "Op de pagina 'Mijn gegevens' scroll je naar beneden en tik je op 'Verzoek indienen'. Snapchat bereidt je data-export voor — dit kan enkele uren tot meerdere dagen duren.",
+        "pt": "Na pagina 'Os meus dados', desce ate ao fim e toca em 'Enviar pedido'. O Snapchat vai preparar a tua exportacao de dados — isto pode demorar de algumas horas a varios dias."
       }
     },
     {
       "image": "/tutorials/snapchat-export/step4.svg",
       "title": {
         "en": "Download the ZIP Files",
-        "de": "ZIP-Dateien herunterladen"
+        "de": "ZIP-Dateien herunterladen",
+        "fr": "Telecharger les fichiers ZIP",
+        "es": "Descargar los archivos ZIP",
+        "it": "Scarica i file ZIP",
+        "pl": "Pobierz pliki ZIP",
+        "nl": "Download de ZIP-bestanden",
+        "pt": "Descarregar os ficheiros ZIP"
       },
       "body": {
         "en": "Once ready, you'll receive an email from Snapchat with a download link. Download all ZIP files (the main 'mydata~<id>' file and any numbered parts). Save them to your computer.",
-        "de": "Sobald der Export fertig ist, erhältst du eine E-Mail von Snapchat mit einem Download-Link. Lade alle ZIP-Dateien herunter (die Hauptdatei 'mydata~<id>' und eventuelle nummerierte Teile). Speichere sie auf deinem Computer."
+        "de": "Sobald der Export fertig ist, erhältst du eine E-Mail von Snapchat mit einem Download-Link. Lade alle ZIP-Dateien herunter (die Hauptdatei 'mydata~<id>' und eventuelle nummerierte Teile). Speichere sie auf deinem Computer.",
+        "fr": "Une fois pret, vous recevrez un e-mail de Snapchat avec un lien de telechargement. Telechargez tous les fichiers ZIP (le fichier principal 'mydata~<id>' et les parties numerotees eventuelles). Enregistrez-les sur votre ordinateur.",
+        "es": "Cuando este listo, recibiras un correo de Snapchat con un enlace de descarga. Descarga todos los archivos ZIP (el archivo principal 'mydata~<id>' y cualquier parte numerada). Guardalos en tu ordenador.",
+        "it": "Quando e pronto, riceverai un'email da Snapchat con un link di download. Scarica tutti i file ZIP (il file principale 'mydata~<id>' ed eventuali parti numerate). Salvali sul tuo computer.",
+        "pl": "Gdy wszystko bedzie gotowe, otrzymasz e-mail od Snapchat z linkiem do pobrania. Pobierz wszystkie pliki ZIP (glowny plik 'mydata~<id>' oraz ewentualne numerowane czesci). Zapisz je na swoim komputerze.",
+        "nl": "Zodra alles klaar is, ontvang je een e-mail van Snapchat met een downloadlink. Download alle ZIP-bestanden (het hoofd-'mydata~<id>'-bestand en eventuele genummerde delen). Sla ze op je computer op.",
+        "pt": "Quando estiver pronto, vais receber um email do Snapchat com um link de download. Descarrega todos os ficheiros ZIP (o ficheiro principal 'mydata~<id>' e quaisquer partes numeradas). Guarda-os no teu computador."
       }
     },
     {
       "title": {
         "en": "Ready to Extract!",
-        "de": "Bereit zum Extrahieren!"
+        "de": "Bereit zum Extrahieren!",
+        "fr": "Pret a extraire !",
+        "es": "Listo para extraer!",
+        "it": "Pronto per estrarre!",
+        "pl": "Gotowe do wyodrebniania!",
+        "nl": "Klaar om te extraheren!",
+        "pt": "Pronto para extrair!"
       },
       "body": {
         "en": "Now open MemorySnaper, go to the Extractor tab, and select the ZIP files you just downloaded. The app will handle the rest!",
-        "de": "Öffne jetzt MemorySnaper, gehe zum Extraktor-Tab und wähle die heruntergeladenen ZIP-Dateien aus. Die App erledigt den Rest!"
+        "de": "Öffne jetzt MemorySnaper, gehe zum Extraktor-Tab und wähle die heruntergeladenen ZIP-Dateien aus. Die App erledigt den Rest!",
+        "fr": "Ouvrez maintenant MemorySnaper, allez dans l'onglet Extracteur et selectionnez les fichiers ZIP que vous venez de telecharger. L'application s'occupe du reste !",
+        "es": "Ahora abre MemorySnaper, ve a la pestana Extractor y selecciona los archivos ZIP que acabas de descargar. La aplicacion se encarga del resto!",
+        "it": "Ora apri MemorySnaper, vai alla scheda Estrattore e seleziona i file ZIP appena scaricati. L'app si occupa del resto!",
+        "pl": "Teraz otworz MemorySnaper, przejdz do zakladki Ekstraktor i wybierz pliki ZIP, ktore przed chwila pobrales. Aplikacja zajmie sie reszta!",
+        "nl": "Open nu MemorySnaper, ga naar het tabblad Extractor en selecteer de ZIP-bestanden die je net hebt gedownload. De app doet de rest!",
+        "pt": "Agora abre o MemorySnaper, vai ao separador Extrator e seleciona os ficheiros ZIP que acabaste de descarregar. A app trata do resto!"
       }
     }
   ]

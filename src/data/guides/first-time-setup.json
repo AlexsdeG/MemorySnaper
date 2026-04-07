@@ -3,55 +3,115 @@
   "icon": "Rocket",
   "title": {
     "en": "Welcome to MemorySnaper",
-    "de": "Willkommen bei MemorySnaper"
+    "de": "Willkommen bei MemorySnaper",
+    "fr": "Bienvenue sur MemorySnaper",
+    "es": "Bienvenido a MemorySnaper",
+    "it": "Benvenuto in MemorySnaper",
+    "pl": "Witamy w MemorySnaper",
+    "nl": "Welkom bij MemorySnaper",
+    "pt": "Bem-vindo ao MemorySnaper"
   },
   "description": {
     "en": "Quick setup walkthrough to get started with your Snapchat memory vault.",
-    "de": "Kurze Einrichtungsanleitung für deinen Snapchat-Erinnerungstresor."
+    "de": "Kurze Einrichtungsanleitung für deinen Snapchat-Erinnerungstresor.",
+    "fr": "Guide de configuration rapide pour demarrer votre coffre de souvenirs Snapchat.",
+    "es": "Guia rapida de configuracion para empezar con tu boveda de recuerdos de Snapchat.",
+    "it": "Guida rapida di configurazione per iniziare con il tuo archivio ricordi Snapchat.",
+    "pl": "Szybki przewodnik konfiguracji, aby zaczac korzystac z Twojego skarbca wspomnien Snapchat.",
+    "nl": "Korte installatierondleiding om te starten met je Snapchat-herinneringskluis.",
+    "pt": "Guia rapido de configuracao para comecares com o teu cofre de memorias do Snapchat."
   },
   "pages": [
     {
       "image": "/tutorials/first-time-setup/step1.svg",
       "title": {
         "en": "What is MemorySnaper?",
-        "de": "Was ist MemorySnaper?"
+        "de": "Was ist MemorySnaper?",
+        "fr": "Qu'est-ce que MemorySnaper ?",
+        "es": "Que es MemorySnaper?",
+        "it": "Cos'e MemorySnaper?",
+        "pl": "Czym jest MemorySnaper?",
+        "nl": "Wat is MemorySnaper?",
+        "pt": "O que e o MemorySnaper?"
       },
       "body": {
         "en": "MemorySnaper extracts and organizes your Snapchat Memories from the official data export. Everything stays 100% local on your computer — nothing is uploaded anywhere.",
-        "de": "MemorySnaper extrahiert und organisiert deine Snapchat-Erinnerungen aus dem offiziellen Datenexport. Alles bleibt zu 100% lokal auf deinem Computer — nichts wird irgendwohin hochgeladen."
+        "de": "MemorySnaper extrahiert und organisiert deine Snapchat-Erinnerungen aus dem offiziellen Datenexport. Alles bleibt zu 100% lokal auf deinem Computer — nichts wird irgendwohin hochgeladen.",
+        "fr": "MemorySnaper extrait et organise vos souvenirs Snapchat a partir de l'export officiel de donnees. Tout reste 100% local sur votre ordinateur — rien n'est televerse ailleurs.",
+        "es": "MemorySnaper extrae y organiza tus recuerdos de Snapchat desde la exportacion oficial de datos. Todo permanece 100% local en tu ordenador — no se sube nada a ningun sitio.",
+        "it": "MemorySnaper estrae e organizza i tuoi ricordi Snapchat dall'esportazione ufficiale dei dati. Tutto resta al 100% in locale sul tuo computer — nulla viene caricato altrove.",
+        "pl": "MemorySnaper wyodrebnia i porzadkuje Twoje wspomnienia Snapchat z oficjalnego eksportu danych. Wszystko pozostaje w 100% lokalnie na Twoim komputerze — nic nie jest nigdzie wysylane.",
+        "nl": "MemorySnaper extraheert en ordent je Snapchat-herinneringen uit de officiele data-export. Alles blijft 100% lokaal op je computer — er wordt niets ergens geupload.",
+        "pt": "O MemorySnaper extrai e organiza as tuas memorias do Snapchat a partir da exportacao oficial de dados. Tudo fica 100% local no teu computador — nada e enviado para lado nenhum."
       }
     },
     {
       "image": "/tutorials/first-time-setup/step2.svg",
       "title": {
         "en": "Step 1: Get Your Export",
-        "de": "Schritt 1: Export holen"
+        "de": "Schritt 1: Export holen",
+        "fr": "Etape 1 : Recuperer votre export",
+        "es": "Paso 1: Obtener tu exportacion",
+        "it": "Passo 1: Ottieni la tua esportazione",
+        "pl": "Krok 1: Pobierz swoj eksport",
+        "nl": "Stap 1: Haal je export op",
+        "pt": "Passo 1: Obtem a tua exportacao"
       },
       "body": {
         "en": "First, request your data export from Snapchat (Settings → My Data → Submit Request). Once ready, download the ZIP files to your computer. Check the 'How to Export' guide for detailed steps.",
-        "de": "Fordere zuerst deinen Datenexport bei Snapchat an (Einstellungen → Meine Daten → Anfrage senden). Lade die ZIP-Dateien herunter, sobald sie bereit sind. Schau dir die Anleitung 'So exportierst du' für detaillierte Schritte an."
+        "de": "Fordere zuerst deinen Datenexport bei Snapchat an (Einstellungen → Meine Daten → Anfrage senden). Lade die ZIP-Dateien herunter, sobald sie bereit sind. Schau dir die Anleitung 'So exportierst du' für detaillierte Schritte an.",
+        "fr": "Demandez d'abord votre export de donnees a Snapchat (Parametres → Mes donnees → Envoyer la demande). Une fois pret, telechargez les fichiers ZIP sur votre ordinateur. Consultez le guide 'Comment exporter' pour les etapes detaillees.",
+        "es": "Primero, solicita tu exportacion de datos en Snapchat (Configuracion → Mis datos → Enviar solicitud). Cuando este lista, descarga los archivos ZIP en tu ordenador. Consulta la guia 'Como exportar' para ver los pasos detallados.",
+        "it": "Per prima cosa, richiedi l'esportazione dei dati da Snapchat (Impostazioni → I miei dati → Invia richiesta). Quando e pronta, scarica i file ZIP sul tuo computer. Consulta la guida 'Come esportare' per i passaggi dettagliati.",
+        "pl": "Najpierw popros Snapchat o eksport danych (Ustawienia → Moje dane → Wyslij prosbe). Gdy bedzie gotowy, pobierz pliki ZIP na komputer. Sprawdz przewodnik 'Jak eksportowac', aby zobaczyc szczegolowe kroki.",
+        "nl": "Vraag eerst je data-export aan bij Snapchat (Instellingen → Mijn gegevens → Verzoek indienen). Zodra die klaar is, download je de ZIP-bestanden naar je computer. Bekijk de gids 'Hoe exporteren' voor gedetailleerde stappen.",
+        "pt": "Primeiro, pede a exportacao dos teus dados no Snapchat (Definicoes → Os meus dados → Enviar pedido). Quando estiver pronta, descarrega os ficheiros ZIP para o teu computador. Consulta o guia 'Como exportar' para veres os passos detalhados."
       }
     },
     {
       "image": "/tutorials/first-time-setup/step3.svg",
       "title": {
         "en": "Step 2: Extract",
-        "de": "Schritt 2: Extrahieren"
+        "de": "Schritt 2: Extrahieren",
+        "fr": "Etape 2 : Extraire",
+        "es": "Paso 2: Extraer",
+        "it": "Passo 2: Estrai",
+        "pl": "Krok 2: Wyodrebnij",
+        "nl": "Stap 2: Extract",
+        "pt": "Passo 2: Extrai"
       },
       "body": {
         "en": "Go to the Extractor tab, select your ZIP files, and start the extraction. The app finds your memories in the archives, removes duplicates, and organizes them into folders by date.",
-        "de": "Gehe zum Extraktor-Tab, wähle deine ZIP-Dateien aus und starte die Extraktion. Die App findet deine Erinnerungen in den Archiven, entfernt Duplikate und sortiert sie nach Datum in Ordner."
+        "de": "Gehe zum Extraktor-Tab, wähle deine ZIP-Dateien aus und starte die Extraktion. Die App findet deine Erinnerungen in den Archiven, entfernt Duplikate und sortiert sie nach Datum in Ordner.",
+        "fr": "Allez dans l'onglet Extracteur, selectionnez vos fichiers ZIP et lancez l'extraction. L'application trouve vos souvenirs dans les archives, supprime les doublons et les organise dans des dossiers par date.",
+        "es": "Ve a la pestana Extractor, selecciona tus archivos ZIP y comienza la extraccion. La aplicacion encuentra tus recuerdos en los archivos, elimina duplicados y los organiza en carpetas por fecha.",
+        "it": "Vai nella scheda Estrattore, seleziona i tuoi file ZIP e avvia l'estrazione. L'app trova i tuoi ricordi negli archivi, rimuove i duplicati e li organizza in cartelle per data.",
+        "pl": "Przejdz do zakladki Ekstraktor, wybierz pliki ZIP i rozpocznij wyodrebnianie. Aplikacja znajduje Twoje wspomnienia w archiwach, usuwa duplikaty i porzadkuje je w folderach wedlug daty.",
+        "nl": "Ga naar het tabblad Extractor, selecteer je ZIP-bestanden en start de extractie. De app vindt je herinneringen in de archieven, verwijdert duplicaten en ordent ze in mappen op datum.",
+        "pt": "Vai ao separador Extrator, seleciona os teus ficheiros ZIP e inicia a extracao. A app encontra as tuas memorias nos arquivos, remove duplicados e organiza tudo em pastas por data."
       }
     },
     {
       "image": "/tutorials/first-time-setup/step4.svg",
       "title": {
         "en": "Step 3: Browse & Enjoy",
-        "de": "Schritt 3: Durchstöbern & Genießen"
+        "de": "Schritt 3: Durchstöbern & Genießen",
+        "fr": "Etape 3 : Parcourir et profiter",
+        "es": "Paso 3: Explorar y disfrutar",
+        "it": "Passo 3: Sfoglia e divertiti",
+        "pl": "Krok 3: Przegladaj i ciesz sie",
+        "nl": "Stap 3: Blader en geniet",
+        "pt": "Passo 3: Navega e desfruta"
       },
       "body": {
         "en": "Switch to the Viewer tab to browse your memories. Filter by date, type, or location. Click any thumbnail to view full-screen. Your memories are yours — forever.",
-        "de": "Wechsle zum Betrachter-Tab, um deine Erinnerungen zu durchstöbern. Filtere nach Datum, Typ oder Standort. Klicke auf ein Vorschaubild für die Vollbildansicht. Deine Erinnerungen gehören dir — für immer."
+        "de": "Wechsle zum Betrachter-Tab, um deine Erinnerungen zu durchstöbern. Filtere nach Datum, Typ oder Standort. Klicke auf ein Vorschaubild für die Vollbildansicht. Deine Erinnerungen gehören dir — für immer.",
+        "fr": "Passez a l'onglet Visionneuse pour parcourir vos souvenirs. Filtrez par date, type ou lieu. Cliquez sur une miniature pour afficher en plein ecran. Vos souvenirs vous appartiennent — pour toujours.",
+        "es": "Cambia a la pestana Visor para explorar tus recuerdos. Filtra por fecha, tipo o ubicacion. Haz clic en cualquier miniatura para verla en pantalla completa. Tus recuerdos son tuyos — para siempre.",
+        "it": "Passa alla scheda Visualizzatore per sfogliare i tuoi ricordi. Filtra per data, tipo o posizione. Fai clic su qualsiasi miniatura per la visualizzazione a schermo intero. I tuoi ricordi sono tuoi — per sempre.",
+        "pl": "Przejdz do zakladki Przegladarka, aby przegladac wspomnienia. Filtruj wedlug daty, typu lub lokalizacji. Kliknij dowolna miniature, aby otworzyc pelny ekran. Twoje wspomnienia naleza do Ciebie — na zawsze.",
+        "nl": "Ga naar het tabblad Viewer om door je herinneringen te bladeren. Filter op datum, type of locatie. Klik op een thumbnail voor volledig scherm. Je herinneringen zijn van jou — voor altijd.",
+        "pt": "Muda para o separador Visualizador para navegares pelas tuas memorias. Filtra por data, tipo ou localizacao. Clica em qualquer miniatura para ver em ecra inteiro. As tuas memorias sao tuas — para sempre."
       }
     }
   ]

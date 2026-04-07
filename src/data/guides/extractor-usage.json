@@ -3,11 +3,23 @@
   "icon": "PackageOpen",
   "title": {
     "en": "How to Use the Extractor",
-    "de": "So verwendest du den Extraktor"
+    "de": "So verwendest du den Extraktor",
+    "fr": "Comment utiliser l'extracteur",
+    "es": "Como usar el extractor",
+    "it": "Come usare l'estrattore",
+    "pl": "Jak korzystac z ekstraktora",
+    "nl": "Hoe gebruik je de extractor",
+    "pt": "Como usar o extrator"
   },
   "description": {
     "en": "Learn how to select your ZIP files, start extraction, and use pause/resume controls.",
-    "de": "Erfahre, wie du deine ZIP-Dateien auswählst, die Extraktion startest und die Pause-/Fortsetzen-Steuerung nutzt."
+    "de": "Erfahre, wie du deine ZIP-Dateien auswählst, die Extraktion startest und die Pause-/Fortsetzen-Steuerung nutzt.",
+    "fr": "Apprenez a selectionner vos fichiers ZIP, demarrer l'extraction et utiliser les controles pause/reprise.",
+    "es": "Aprende a seleccionar tus archivos ZIP, iniciar la extraccion y usar los controles de pausa/reanudacion.",
+    "it": "Scopri come selezionare i tuoi file ZIP, avviare l'estrazione e usare i controlli pausa/riprendi.",
+    "pl": "Dowiedz sie, jak wybrac pliki ZIP, uruchomic wyodrebnianie i korzystac z kontroli pauza/wznow.",
+    "nl": "Leer hoe je je ZIP-bestanden selecteert, extractie start en de knoppen pauzeren/hervatten gebruikt.",
+    "pt": "Aprende a selecionar os teus ficheiros ZIP, iniciar a extracao e usar os controlos de pausar/retomar."
   },
   "relatedPage": "downloader",
   "pages": [
@@ -15,44 +27,92 @@
       "image": "/tutorials/extractor-usage/step1.svg",
       "title": {
         "en": "Select Your ZIP Files",
-        "de": "Wähle deine ZIP-Dateien"
+        "de": "Wähle deine ZIP-Dateien",
+        "fr": "Selectionner vos fichiers ZIP",
+        "es": "Selecciona tus archivos ZIP",
+        "it": "Seleziona i tuoi file ZIP",
+        "pl": "Wybierz swoje pliki ZIP",
+        "nl": "Selecteer je ZIP-bestanden",
+        "pt": "Seleciona os teus ficheiros ZIP"
       },
       "body": {
         "en": "Click 'Select ZIP Files' and choose the main Snapchat export file (mydata~<id>.zip). If you have additional numbered parts, select those too.",
-        "de": "Klicke auf 'ZIP-Dateien auswählen' und wähle die Hauptdatei des Snapchat-Exports (mydata~<id>.zip). Falls du zusätzliche nummerierte Teile hast, wähle diese ebenfalls aus."
+        "de": "Klicke auf 'ZIP-Dateien auswählen' und wähle die Hauptdatei des Snapchat-Exports (mydata~<id>.zip). Falls du zusätzliche nummerierte Teile hast, wähle diese ebenfalls aus.",
+        "fr": "Cliquez sur 'Selectionner des fichiers ZIP' et choisissez le fichier principal d'export Snapchat (mydata~<id>.zip). Si vous avez des parties numerotees supplementaires, selectionnez-les aussi.",
+        "es": "Haz clic en 'Seleccionar archivos ZIP' y elige el archivo principal de exportacion de Snapchat (mydata~<id>.zip). Si tienes partes numeradas adicionales, seleccionalas tambien.",
+        "it": "Fai clic su 'Seleziona file ZIP' e scegli il file principale di esportazione Snapchat (mydata~<id>.zip). Se hai parti numerate aggiuntive, seleziona anche quelle.",
+        "pl": "Kliknij 'Wybierz pliki ZIP' i wybierz glowny plik eksportu Snapchat (mydata~<id>.zip). Jesli masz dodatkowe numerowane czesci, wybierz je rowniez.",
+        "nl": "Klik op 'ZIP-bestanden selecteren' en kies het hoofdexportbestand van Snapchat (mydata~<id>.zip). Heb je extra genummerde delen, selecteer die dan ook.",
+        "pt": "Clica em 'Selecionar ficheiros ZIP' e escolhe o ficheiro principal da exportacao do Snapchat (mydata~<id>.zip). Se tiveres partes numeradas adicionais, seleciona-as tambem."
       }
     },
     {
       "image": "/tutorials/extractor-usage/step2.svg",
       "title": {
         "en": "Review Disclaimers",
-        "de": "Hinweise lesen"
+        "de": "Hinweise lesen",
+        "fr": "Lire les avertissements",
+        "es": "Revisar avisos",
+        "it": "Rivedi gli avvisi",
+        "pl": "Przeczytaj ostrzezenia",
+        "nl": "Bekijk de meldingen",
+        "pt": "Reve os avisos"
       },
       "body": {
         "en": "Read the storage and processing disclaimers. Check the boxes to confirm you understand the requirements, then click 'Start'.",
-        "de": "Lies die Speicher- und Verarbeitungshinweise. Setze die Häkchen zur Bestätigung, dann klicke auf 'Start'."
+        "de": "Lies die Speicher- und Verarbeitungshinweise. Setze die Häkchen zur Bestätigung, dann klicke auf 'Start'.",
+        "fr": "Lisez les avertissements de stockage et de traitement. Cochez les cases pour confirmer que vous comprenez les exigences, puis cliquez sur 'Demarrer'.",
+        "es": "Lee los avisos de almacenamiento y procesamiento. Marca las casillas para confirmar que entiendes los requisitos y luego haz clic en 'Iniciar'.",
+        "it": "Leggi gli avvisi su spazio e elaborazione. Seleziona le caselle per confermare che hai compreso i requisiti, poi fai clic su 'Avvia'.",
+        "pl": "Przeczytaj informacje o miejscu i przetwarzaniu. Zaznacz pola, aby potwierdzic, ze rozumiesz wymagania, a nastepnie kliknij 'Start'.",
+        "nl": "Lees de opslag- en verwerkingsmeldingen. Vink de vakjes aan om te bevestigen dat je de vereisten begrijpt en klik daarna op 'Start'.",
+        "pt": "Le os avisos de armazenamento e processamento. Marca as caixas para confirmar que compreendes os requisitos e depois clica em 'Iniciar'."
       }
     },
     {
       "image": "/tutorials/extractor-usage/step3.svg",
       "title": {
         "en": "Monitor Progress",
-        "de": "Fortschritt überwachen"
+        "de": "Fortschritt überwachen",
+        "fr": "Suivre la progression",
+        "es": "Supervisar progreso",
+        "it": "Monitora avanzamento",
+        "pl": "Monitoruj postep",
+        "nl": "Volg de voortgang",
+        "pt": "Acompanha o progresso"
       },
       "body": {
         "en": "Watch the progress bar and live console. You'll see files being processed, duplicates being skipped, and which ZIP is currently active.",
-        "de": "Verfolge den Fortschrittsbalken und die Live-Konsole. Du siehst, wie Dateien verarbeitet werden, Duplikate übersprungen werden und welche ZIP gerade aktiv ist."
+        "de": "Verfolge den Fortschrittsbalken und die Live-Konsole. Du siehst, wie Dateien verarbeitet werden, Duplikate übersprungen werden und welche ZIP gerade aktiv ist.",
+        "fr": "Surveillez la barre de progression et la console en direct. Vous verrez les fichiers traites, les doublons ignores et quel ZIP est actuellement actif.",
+        "es": "Observa la barra de progreso y la consola en vivo. Veras archivos procesandose, duplicados omitidos y que ZIP esta activo en ese momento.",
+        "it": "Controlla la barra di avanzamento e la console live. Vedrai i file in elaborazione, i duplicati saltati e quale ZIP e attualmente attivo.",
+        "pl": "Obserwuj pasek postepu i konsole na zywo. Zobaczysz przetwarzane pliki, pomijane duplikaty oraz to, ktory ZIP jest aktualnie aktywny.",
+        "nl": "Bekijk de voortgangsbalk en live console. Je ziet welke bestanden worden verwerkt, welke duplicaten worden overgeslagen en welke ZIP momenteel actief is.",
+        "pt": "Observa a barra de progresso e a consola em direto. Vais ver ficheiros a serem processados, duplicados a serem ignorados e qual ZIP esta ativo no momento."
       }
     },
     {
       "image": "/tutorials/extractor-usage/step4.svg",
       "title": {
         "en": "Pause, Resume & Stop",
-        "de": "Pausieren, Fortsetzen & Stoppen"
+        "de": "Pausieren, Fortsetzen & Stoppen",
+        "fr": "Pause, reprise et arret",
+        "es": "Pausar, reanudar y detener",
+        "it": "Pausa, riprendi e ferma",
+        "pl": "Wstrzymaj, wznow i zatrzymaj",
+        "nl": "Pauzeren, hervatten en stoppen",
+        "pt": "Pausar, retomar e parar"
       },
       "body": {
         "en": "Use 'Pause' to temporarily halt processing — your progress is saved. Click 'Resume' to continue. 'Stop' ends the session gracefully; you can reload state later.",
-        "de": "Nutze 'Pause', um die Verarbeitung vorübergehend anzuhalten — dein Fortschritt wird gespeichert. Klicke 'Fortsetzen', um weiterzumachen. 'Stopp' beendet die Sitzung sauber; du kannst den Zustand später neu laden."
+        "de": "Nutze 'Pause', um die Verarbeitung vorübergehend anzuhalten — dein Fortschritt wird gespeichert. Klicke 'Fortsetzen', um weiterzumachen. 'Stopp' beendet die Sitzung sauber; du kannst den Zustand später neu laden.",
+        "fr": "Utilisez 'Pause' pour interrompre temporairement le traitement — votre progression est enregistree. Cliquez sur 'Reprendre' pour continuer. 'Arreter' termine la session proprement ; vous pourrez recharger l'etat plus tard.",
+        "es": "Usa 'Pausar' para detener temporalmente el procesamiento — tu progreso se guarda. Haz clic en 'Reanudar' para continuar. 'Detener' finaliza la sesion de forma correcta; puedes recargar el estado mas tarde.",
+        "it": "Usa 'Pausa' per interrompere temporaneamente l'elaborazione — i progressi vengono salvati. Fai clic su 'Riprendi' per continuare. 'Ferma' chiude la sessione correttamente; potrai ricaricare lo stato in seguito.",
+        "pl": "Uzyj 'Wstrzymaj', aby tymczasowo zatrzymac przetwarzanie — postep zostanie zapisany. Kliknij 'Wznow', aby kontynuowac. 'Zatrzymaj' konczy sesje bezpiecznie; stan mozesz wczytac pozniej.",
+        "nl": "Gebruik 'Pauzeren' om de verwerking tijdelijk te stoppen — je voortgang wordt opgeslagen. Klik op 'Hervatten' om door te gaan. 'Stoppen' beeindigt de sessie netjes; je kunt de status later opnieuw laden.",
+        "pt": "Usa 'Pausar' para interromper temporariamente o processamento — o teu progresso e guardado. Clica em 'Retomar' para continuar. 'Parar' termina a sessao de forma segura; podes recarregar o estado mais tarde."
       }
     }
   ]

@@ -57,9 +57,11 @@ async function detectSystemLocale(): Promise<string | null> {
   }
 }
 
+const EXPLICIT_RESOLVED_LOCALES: LanguagePreference[] = ["en", "de", "fr", "es", "it", "pl", "nl", "pt"];
+
 async function resolveLocale(preference: LanguagePreference): Promise<ResolvedLocale> {
-  if (preference === "en" || preference === "de") {
-    return preference;
+  if (preference !== "system" && (EXPLICIT_RESOLVED_LOCALES as string[]).includes(preference)) {
+    return preference as ResolvedLocale;
   }
 
   const systemLocale = await detectSystemLocale();

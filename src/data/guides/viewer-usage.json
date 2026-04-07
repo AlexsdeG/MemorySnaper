@@ -3,11 +3,23 @@
   "icon": "Images",
   "title": {
     "en": "How to Use the Viewer",
-    "de": "So verwendest du den Betrachter"
+    "de": "So verwendest du den Betrachter",
+    "fr": "Comment utiliser la visionneuse",
+    "es": "Como usar el visor",
+    "it": "Come usare il visualizzatore",
+    "pl": "Jak korzystac z przegladarki",
+    "nl": "Hoe gebruik je de viewer",
+    "pt": "Como usar o visualizador"
   },
   "description": {
     "en": "Browse, filter, and view your extracted Snapchat memories.",
-    "de": "Durchsuche, filtere und betrachte deine extrahierten Snapchat-Erinnerungen."
+    "de": "Durchsuche, filtere und betrachte deine extrahierten Snapchat-Erinnerungen.",
+    "fr": "Parcourez, filtrez et visualisez vos souvenirs Snapchat extraits.",
+    "es": "Explora, filtra y visualiza tus recuerdos de Snapchat extraidos.",
+    "it": "Sfoglia, filtra e visualizza i tuoi ricordi Snapchat estratti.",
+    "pl": "Przegladaj, filtruj i ogladaj wyodrebnione wspomnienia Snapchat.",
+    "nl": "Blader, filter en bekijk je geextraheerde Snapchat-herinneringen.",
+    "pt": "Navega, filtra e visualiza as tuas memorias extraidas do Snapchat."
   },
   "relatedPage": "viewer",
   "pages": [
@@ -15,33 +27,69 @@
       "image": "/tutorials/viewer-usage/step1.svg",
       "title": {
         "en": "Open the Viewer",
-        "de": "Betrachter öffnen"
+        "de": "Betrachter öffnen",
+        "fr": "Ouvrir la visionneuse",
+        "es": "Abrir el visor",
+        "it": "Apri il visualizzatore",
+        "pl": "Otworz przegladarke",
+        "nl": "Open de viewer",
+        "pt": "Abrir o visualizador"
       },
       "body": {
         "en": "Switch to the Viewer tab. Your processed memories appear as a thumbnail grid, sorted by date.",
-        "de": "Wechsle zum Betrachter-Tab. Deine verarbeiteten Erinnerungen erscheinen als Vorschau-Raster, sortiert nach Datum."
+        "de": "Wechsle zum Betrachter-Tab. Deine verarbeiteten Erinnerungen erscheinen als Vorschau-Raster, sortiert nach Datum.",
+        "fr": "Passez a l'onglet Visionneuse. Vos souvenirs traites apparaissent sous forme de grille de miniatures, tries par date.",
+        "es": "Cambia a la pestana Visor. Tus recuerdos procesados aparecen como una cuadricula de miniaturas, ordenados por fecha.",
+        "it": "Passa alla scheda Visualizzatore. I tuoi ricordi elaborati appaiono come una griglia di miniature, ordinata per data.",
+        "pl": "Przejdz do zakladki Przegladarka. Twoje przetworzone wspomnienia pojawia sie jako siatka miniatur, posortowana wedlug daty.",
+        "nl": "Ga naar het tabblad Viewer. Je verwerkte herinneringen verschijnen als een thumbnailraster, gesorteerd op datum.",
+        "pt": "Muda para o separador Visualizador. As tuas memorias processadas aparecem numa grelha de miniaturas, ordenadas por data."
       }
     },
     {
       "image": "/tutorials/viewer-usage/step2.svg",
       "title": {
         "en": "Filter & Search",
-        "de": "Filtern & Suchen"
+        "de": "Filtern & Suchen",
+        "fr": "Filtrer et rechercher",
+        "es": "Filtrar y buscar",
+        "it": "Filtra e cerca",
+        "pl": "Filtruj i szukaj",
+        "nl": "Filteren en zoeken",
+        "pt": "Filtrar e pesquisar"
       },
       "body": {
         "en": "Use the filter bar to narrow results by date range, media type (photo/video), or location. Type in the search box to find specific memories.",
-        "de": "Nutze die Filterleiste, um Ergebnisse nach Zeitraum, Medientyp (Foto/Video) oder Standort einzugrenzen. Tippe in das Suchfeld, um bestimmte Erinnerungen zu finden."
+        "de": "Nutze die Filterleiste, um Ergebnisse nach Zeitraum, Medientyp (Foto/Video) oder Standort einzugrenzen. Tippe in das Suchfeld, um bestimmte Erinnerungen zu finden.",
+        "fr": "Utilisez la barre de filtres pour affiner les resultats par plage de dates, type de media (photo/video) ou lieu. Saisissez un texte dans la recherche pour trouver des souvenirs precis.",
+        "es": "Usa la barra de filtros para reducir resultados por rango de fechas, tipo de medio (foto/video) o ubicacion. Escribe en la caja de busqueda para encontrar recuerdos concretos.",
+        "it": "Usa la barra dei filtri per restringere i risultati per intervallo date, tipo media (foto/video) o posizione. Digita nella casella di ricerca per trovare ricordi specifici.",
+        "pl": "Uzyj paska filtrow, aby zawezic wyniki wedlug zakresu dat, typu mediow (zdjecie/wideo) lub lokalizacji. Wpisz w polu wyszukiwania, aby znalezc konkretne wspomnienia.",
+        "nl": "Gebruik de filterbalk om resultaten te verfijnen op datumbereik, mediatype (foto/video) of locatie. Typ in het zoekvak om specifieke herinneringen te vinden.",
+        "pt": "Usa a barra de filtros para reduzir resultados por intervalo de datas, tipo de media (foto/video) ou localizacao. Escreve na caixa de pesquisa para encontrares memorias especificas."
       }
     },
     {
       "image": "/tutorials/viewer-usage/step3.svg",
       "title": {
         "en": "View Full Screen",
-        "de": "Vollbildansicht"
+        "de": "Vollbildansicht",
+        "fr": "Afficher en plein ecran",
+        "es": "Ver en pantalla completa",
+        "it": "Visualizza a schermo intero",
+        "pl": "Ogladaj na pelnym ekranie",
+        "nl": "Bekijk op volledig scherm",
+        "pt": "Ver em ecra inteiro"
       },
       "body": {
         "en": "Click any thumbnail to open it in full-screen mode. Use arrow keys or swipe to navigate between memories. Click the info icon to see metadata (date, location, type).",
-        "de": "Klicke auf ein Vorschaubild, um es im Vollbildmodus zu öffnen. Nutze die Pfeiltasten oder wische, um zwischen Erinnerungen zu navigieren. Klicke auf das Info-Symbol, um Metadaten zu sehen (Datum, Standort, Typ)."
+        "de": "Klicke auf ein Vorschaubild, um es im Vollbildmodus zu öffnen. Nutze die Pfeiltasten oder wische, um zwischen Erinnerungen zu navigieren. Klicke auf das Info-Symbol, um Metadaten zu sehen (Datum, Standort, Typ).",
+        "fr": "Cliquez sur une miniature pour l'ouvrir en mode plein ecran. Utilisez les fleches ou le glissement pour naviguer entre les souvenirs. Cliquez sur l'icone info pour voir les metadonnees (date, lieu, type).",
+        "es": "Haz clic en cualquier miniatura para abrirla en modo pantalla completa. Usa las flechas o desliza para navegar entre recuerdos. Haz clic en el icono de informacion para ver metadatos (fecha, ubicacion, tipo).",
+        "it": "Fai clic su qualsiasi miniatura per aprirla a schermo intero. Usa i tasti freccia o scorri per navigare tra i ricordi. Fai clic sull'icona info per vedere i metadati (data, posizione, tipo).",
+        "pl": "Kliknij dowolna miniature, aby otworzyc ja w trybie pelnoekranowym. Uzyj klawiszy strzalek lub przesuwania, aby poruszac sie miedzy wspomnieniami. Kliknij ikone informacji, aby zobaczyc metadane (data, lokalizacja, typ).",
+        "nl": "Klik op een thumbnail om die in volledig scherm te openen. Gebruik pijltjestoetsen of swipen om tussen herinneringen te navigeren. Klik op het info-icoon om metadata te zien (datum, locatie, type).",
+        "pt": "Clica em qualquer miniatura para a abrir em modo de ecra inteiro. Usa as setas do teclado ou desliza para navegar entre memorias. Clica no icone de informacao para ver metadados (data, localizacao, tipo)."
       }
     }
   ]
