@@ -456,7 +456,7 @@ export function Workflow() {
       return null;
     }
 
-    const maybePart = rest.match(/^(?<uuid>[0-9a-f-]+)\s+(?<part>\d+)$/);
+    const maybePart = rest.match(/^(?<uuid>[0-9a-f-]+)-(?<part>\d+)$/);
     if (maybePart?.groups?.uuid && maybePart.groups.part) {
       return {
         uuid: maybePart.groups.uuid,
