@@ -5,8 +5,7 @@
 make the missing file donwlaod section load faster, currently it takes quite long so the list will load
 
 
-
-overlay img forimg/vid not working? compare with old version and demo data
+thumbnails are not reloaded in the viewer since update to be more consistent with the new data structure. here need update the viewer to reload the thumbnail when the session is loaded, here it needs trigger to reload the cahched data of the viewer when a session is started or stopped from downloader/extractor
 
 
 
@@ -40,47 +39,7 @@ add spacing between side bar menu items + confirm window settings reset data
 
 
 
+Hardware acceleration — On Windows, could detect NVENC (h264_nvenc) or QSV for much faster encoding. Significant optimization but adds codec detection complexity. Recommend deferring to a follow-up.
+Downscale-with-sharpen alternative — When resolution gap is extreme (>2×), upscaling the video is heavy. Could instead downscale overlay with a sharpening filter to preserve text. Recommend defaulting to upscale but adding as a config option later.
 
 
-Analysis:"""
-You now have enough evidence in your logs to pinpoint the issue precisely.
-
-What is happening
-1. ZIP lookup is working.
-- The run finds and uses the correct archive and mid.
-- So this is not a ZIP parsing or missing-file problem.
-
-2. Overlay discovery is working.
-- For memory item 7, overlay_present=true and the overlay command is attempted.
-- So this is not a “overlay file missing” problem.
-
-3. The failure is only in the video+overlay ffmpeg composition step.
-- The overlay ffmpeg command starts for item 7.
-- It then times out.
-- Immediately after that, the fallback path (video without overlay) succeeds.
-- Final status is success with overlay_requested=true, overlay_applied=false, overlay_fallback=true.
-
-That means the pipeline is healthy overall, but the specific ffmpeg filter/transcode path for this mp4+png pair is not finishing in time.
-
-Why this specific pair is problematic
-From your earlier probe/log details, this video has rotation metadata and the overlay is large RGBA. This combination can make the filter graph much heavier or behave poorly on some ffmpeg builds:
-1. Base video stream is stored as 960x540 with rotation side-data (-90).
-2. Overlay PNG is high-resolution RGBA (portrait asset).
-3. The command does scale+alpha-overlay+re-encode+aac in one graph.
-4. With warning-only logs, ffmpeg gives almost no progress output, so it looks frozen.
-
-So this is not simply “mp4 format bad” or “png format bad”.
-- mp4 alone works (your fallback transcode succeeds).
-- png overlay works on images (item 6 succeeds).
-- The problematic case is this specific video overlay graph on real data.
-
-Why earlier builds seemed fine
-Most likely:
-1. Your earlier test set didn’t include this exact problematic combination.
-2. Image overlays still worked, so it looked generally correct.
-3. The system previously hid fallback as success, so missing overlays were not obvious.
-
-Now with the new telemetry, you can clearly see overlay fallback events, which is why the issue is visible now.
-
-If you want, next I can implement the targeted composition fix for rotated videos (force deterministic orientation path before overlay and hard-bound overlay timeline to source duration), which is the correct technical step for this exact failure mode.
-"""

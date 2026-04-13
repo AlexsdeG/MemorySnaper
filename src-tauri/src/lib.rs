@@ -293,9 +293,10 @@ fn describe_process_error(error: &core::processor::ProcessorError) -> (String, S
         ProcessorError::InvalidInput(reason) => {
             ("processor.invalid_input".to_string(), reason.to_string())
         }
-        ProcessorError::Blake3(reason) => {
-            ("processor.blake3".to_string(), truncate_debug_text(reason, 1200))
-        }
+        ProcessorError::Blake3(reason) => (
+            "processor.blake3".to_string(),
+            truncate_debug_text(reason, 1200),
+        ),
     }
 }
 
@@ -1749,8 +1750,7 @@ async fn get_viewer_items(
         let location_resolved: Option<String> = row.try_get("location_resolved").ok().flatten();
         let location_raw: Option<String> = row.try_get("location").ok().flatten();
         let relative_media_path: Option<String> = row.try_get("relative_path").ok().flatten();
-        let relative_thumbnail_path: Option<String> =
-            row.try_get("thumbnail_path").ok().flatten();
+        let relative_thumbnail_path: Option<String> = row.try_get("thumbnail_path").ok().flatten();
         let normalized_raw_location = location_raw
             .as_deref()
             .and_then(crate::core::geocoder::normalize_location_text);
@@ -2675,60 +2675,60 @@ async fn process_memories_from_zip_archives(
                 continue;
             }
             Ok(result) => match result {
-            Ok(scan) => scan,
-            Err(error) => {
-                failed_count += 1;
+                Ok(scan) => scan,
+                Err(error) => {
+                    failed_count += 1;
 
-                sqlx::query(
-                    "
+                    sqlx::query(
+                        "
                     UPDATE MemoryItem
                     SET status = 'processing_failed',
                         last_error_code = 'ZIP_HUNTER_FAILED',
                         last_error_message = ?1
                     WHERE id = ?2
                     ",
-                )
-                .bind(error.to_string())
-                .bind(memory_item_id)
-                .execute(&pool)
-                .await
-                .map_err(|db_error| {
-                    format!("failed to update ZIP_HUNTER_FAILED status: {db_error}")
-                })?;
-
-                sqlx::query("UPDATE Memories SET status = 'FAILED_NETWORK' WHERE id = ?1")
-                    .bind(memory_group_id)
+                    )
+                    .bind(error.to_string())
+                    .bind(memory_item_id)
                     .execute(&pool)
                     .await
                     .map_err(|db_error| {
-                        format!("failed to update FAILED_NETWORK memory status: {db_error}")
+                        format!("failed to update ZIP_HUNTER_FAILED status: {db_error}")
                     })?;
 
-                window
-                    .emit(
-                        PROCESS_PROGRESS_EVENT,
-                        ProcessProgressPayload {
-                            total_files,
-                            completed_files: index + 1,
-                            successful_files: processed_count,
-                            failed_files: failed_count,
-                            memory_item_id: Some(memory_item_id),
-                            status: "error".to_string(),
-                            error_code: Some(ProcessErrorCode::ProcessingFailed),
-                            error_message: Some(error.to_string()),
-                            debug_stage: Some("zip.scan.error".to_string()),
-                            debug_mid: Some(memory_mid.clone()),
-                            debug_date: Some(memory_date.clone()),
-                            debug_zip: None,
-                            debug_details: Some(truncate_debug_text(&error.to_string(), 3200)),
-                        },
-                    )
-                    .map_err(|emit_error| {
-                        format!("failed to emit zip-process error progress: {emit_error}")
-                    })?;
+                    sqlx::query("UPDATE Memories SET status = 'FAILED_NETWORK' WHERE id = ?1")
+                        .bind(memory_group_id)
+                        .execute(&pool)
+                        .await
+                        .map_err(|db_error| {
+                            format!("failed to update FAILED_NETWORK memory status: {db_error}")
+                        })?;
 
-                continue;
-            }
+                    window
+                        .emit(
+                            PROCESS_PROGRESS_EVENT,
+                            ProcessProgressPayload {
+                                total_files,
+                                completed_files: index + 1,
+                                successful_files: processed_count,
+                                failed_files: failed_count,
+                                memory_item_id: Some(memory_item_id),
+                                status: "error".to_string(),
+                                error_code: Some(ProcessErrorCode::ProcessingFailed),
+                                error_message: Some(error.to_string()),
+                                debug_stage: Some("zip.scan.error".to_string()),
+                                debug_mid: Some(memory_mid.clone()),
+                                debug_date: Some(memory_date.clone()),
+                                debug_zip: None,
+                                debug_details: Some(truncate_debug_text(&error.to_string(), 3200)),
+                            },
+                        )
+                        .map_err(|emit_error| {
+                            format!("failed to emit zip-process error progress: {emit_error}")
+                        })?;
+
+                    continue;
+                }
             },
         };
 

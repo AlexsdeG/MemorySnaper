@@ -4,8 +4,28 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const FFMPEG_TIMEOUT_SECS: u64 = 50;
 const FFMPEG_POLL_INTERVAL_MS: u64 = 200;
+const FFMPEG_TIMEOUT_IMAGE_SECS: u64 = 30;
+const FFMPEG_TIMEOUT_METADATA_SECS: u64 = 20;
+const FFMPEG_TIMEOUT_TRANSCODE_SECS: u64 = 120;
+const FFMPEG_TIMEOUT_OVERLAY_SECS: u64 = 180;
+
+#[derive(Debug, Clone)]
+pub struct MediaProbe {
+    pub width: u32,
+    pub height: u32,
+    pub rotation: i32,
+    pub display_width: u32,
+    pub display_height: u32,
+    pub duration_secs: f64,
+    pub has_audio: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImageProbe {
+    pub width: u32,
+    pub height: u32,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MediaKind {
@@ -147,10 +167,14 @@ pub async fn merge_media_with_optional_overlay(
     overlay_path: Option<&Path>,
     output_path: &Path,
     encoding_options: MediaEncodingOptions,
+    video_probe: Option<&MediaProbe>,
+    overlay_probe: Option<&ImageProbe>,
 ) -> Result<(), MediaError> {
     let base_media_path = base_media_path.to_path_buf();
     let overlay_path = overlay_path.map(Path::to_path_buf);
     let output_path = output_path.to_path_buf();
+    let video_probe = video_probe.cloned();
+    let overlay_probe = overlay_probe.cloned();
 
     tokio::task::spawn_blocking(move || {
         if let Some(parent) = output_path.parent() {
@@ -175,9 +199,23 @@ pub async fn merge_media_with_optional_overlay(
                     &ffmpeg_output_path,
                     media_kind,
                     encoding_options,
+                    video_probe.as_ref(),
+                    overlay_probe.as_ref(),
                 );
 
-                run_ffmpeg(args)?;
+                let timeout = match media_kind {
+                    MediaKind::Video => {
+                        let base = FFMPEG_TIMEOUT_OVERLAY_SECS;
+                        if let Some(probe) = &video_probe {
+                            base.max((probe.duration_secs * 20.0) as u64)
+                        } else {
+                            base
+                        }
+                    }
+                    MediaKind::Image => FFMPEG_TIMEOUT_IMAGE_SECS,
+                };
+
+                run_ffmpeg(args, timeout)?;
                 std::fs::rename(&ffmpeg_output_path, &output_path)?;
 
                 Ok(())
@@ -195,7 +233,7 @@ pub async fn merge_media_with_optional_overlay(
                             &ffmpeg_output_path,
                             encoding_options,
                         );
-                        run_ffmpeg(args)?;
+                        run_ffmpeg(args, FFMPEG_TIMEOUT_IMAGE_SECS)?;
                         std::fs::rename(&ffmpeg_output_path, &output_path)?;
                         Ok(())
                     }
@@ -208,7 +246,7 @@ pub async fn merge_media_with_optional_overlay(
                             &ffmpeg_output_path,
                             encoding_options.video_profile,
                         );
-                        run_ffmpeg(args)?;
+                        run_ffmpeg(args, FFMPEG_TIMEOUT_TRANSCODE_SECS)?;
                         std::fs::rename(&ffmpeg_output_path, &output_path)?;
 
                         Ok(())
@@ -244,7 +282,7 @@ pub async fn write_metadata_with_ffmpeg(
             media_kind,
         );
 
-        run_ffmpeg(args)?;
+        run_ffmpeg(args, FFMPEG_TIMEOUT_METADATA_SECS)?;
         std::fs::rename(&temp_output_path, &media_path)?;
         Ok::<(), MediaError>(())
     })
@@ -280,8 +318,175 @@ pub async fn cleanup_intermediate_files(
     Ok(())
 }
 
-fn run_ffmpeg(args: Vec<String>) -> Result<(), MediaError> {
-    eprintln!("[ffmpeg] cmd: ffmpeg {}", args.join(" "));
+pub async fn probe_media(path: &Path) -> Result<MediaProbe, MediaError> {
+    let path = path.to_path_buf();
+
+    tokio::task::spawn_blocking(move || {
+        let output = Command::new("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height,duration,codec_type",
+                "-show_entries",
+                "stream_side_data=rotation",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=nokey=0:noprint_wrappers=1",
+            ])
+            .arg(&path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(MediaError::Io)?;
+
+        if !output.status.success() {
+            return Err(MediaError::FfmpegFailed {
+                status: output.status.code(),
+                stderr: format!(
+                    "ffprobe failed for '{}': {}",
+                    path.display(),
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ),
+            });
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut width: u32 = 0;
+        let mut height: u32 = 0;
+        let mut rotation: i32 = 0;
+        let mut duration_secs: f64 = 0.0;
+
+        for line in stdout.lines() {
+            if let Some(v) = line.strip_prefix("width=") {
+                width = v.trim().parse().unwrap_or(0);
+            } else if let Some(v) = line.strip_prefix("height=") {
+                height = v.trim().parse().unwrap_or(0);
+            } else if let Some(v) = line.strip_prefix("rotation=") {
+                rotation = v.trim().parse().unwrap_or(0);
+            } else if let Some(v) = line.strip_prefix("duration=") {
+                if duration_secs <= 0.0 {
+                    duration_secs = v.trim().parse().unwrap_or(0.0);
+                }
+            }
+        }
+
+        // Check for audio stream presence separately.
+        let audio_output = Command::new("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-select_streams",
+                "a:0",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "default=nokey=0:noprint_wrappers=1",
+            ])
+            .arg(&path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+            .map_err(MediaError::Io)?;
+
+        let has_audio = String::from_utf8_lossy(&audio_output.stdout)
+            .lines()
+            .any(|l| l.contains("audio"));
+
+        let (display_width, display_height) = if rotation.abs() == 90 || rotation.abs() == 270 {
+            (height, width)
+        } else {
+            (width, height)
+        };
+
+        eprintln!(
+            "[media-probe] '{}': {}x{} rotation={} display={}x{} duration={:.2}s audio={}",
+            path.display(),
+            width,
+            height,
+            rotation,
+            display_width,
+            display_height,
+            duration_secs,
+            has_audio
+        );
+
+        Ok(MediaProbe {
+            width,
+            height,
+            rotation,
+            display_width,
+            display_height,
+            duration_secs,
+            has_audio,
+        })
+    })
+    .await?
+}
+
+pub async fn probe_image(path: &Path) -> Result<ImageProbe, MediaError> {
+    let path = path.to_path_buf();
+
+    tokio::task::spawn_blocking(move || {
+        let output = Command::new("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height",
+                "-of",
+                "default=nokey=0:noprint_wrappers=1",
+            ])
+            .arg(&path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(MediaError::Io)?;
+
+        if !output.status.success() {
+            return Err(MediaError::FfmpegFailed {
+                status: output.status.code(),
+                stderr: format!(
+                    "ffprobe failed for '{}': {}",
+                    path.display(),
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ),
+            });
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut width: u32 = 0;
+        let mut height: u32 = 0;
+
+        for line in stdout.lines() {
+            if let Some(v) = line.strip_prefix("width=") {
+                width = v.trim().parse().unwrap_or(0);
+            } else if let Some(v) = line.strip_prefix("height=") {
+                height = v.trim().parse().unwrap_or(0);
+            }
+        }
+
+        eprintln!("[media-probe] '{}': {}x{}", path.display(), width, height);
+
+        Ok(ImageProbe { width, height })
+    })
+    .await?
+}
+
+fn run_ffmpeg(args: Vec<String>, timeout_secs: u64) -> Result<(), MediaError> {
+    eprintln!(
+        "[ffmpeg] cmd (timeout={}s): ffmpeg {}",
+        timeout_secs,
+        args.join(" ")
+    );
 
     let stderr_log_path = std::env::temp_dir().join(format!(
         "memorysnaper-ffmpeg-{}-{}.log",
@@ -317,7 +522,7 @@ fn run_ffmpeg(args: Vec<String>) -> Result<(), MediaError> {
             break status;
         }
 
-        if started_at.elapsed() >= Duration::from_secs(FFMPEG_TIMEOUT_SECS) {
+        if started_at.elapsed() >= Duration::from_secs(timeout_secs) {
             timed_out = true;
             let _ = child.kill();
             break child.wait().map_err(MediaError::Io)?;
@@ -334,7 +539,7 @@ fn run_ffmpeg(args: Vec<String>) -> Result<(), MediaError> {
             status: None,
             stderr: format!(
                 "ffmpeg timed out after {}s{}{}",
-                FFMPEG_TIMEOUT_SECS,
+                timeout_secs,
                 if stderr_text.trim().is_empty() {
                     ""
                 } else {
@@ -396,19 +601,24 @@ fn build_ffmpeg_overlay_args(
     output_path: &Path,
     media_kind: MediaKind,
     encoding_options: MediaEncodingOptions,
+    video_probe: Option<&MediaProbe>,
+    overlay_probe: Option<&ImageProbe>,
 ) -> Vec<String> {
-    let mut args = vec![
-        "-y".to_string(),
-        "-i".to_string(),
-        base_media_path.to_string_lossy().to_string(),
-    ];
+    let mut args: Vec<String> = Vec::new();
 
     match media_kind {
         MediaKind::Image => {
+            args.push("-y".to_string());
+            args.push("-i".to_string());
+            args.push(base_media_path.to_string_lossy().to_string());
             args.push("-i".to_string());
             args.push(overlay_path.to_string_lossy().to_string());
+
+            let filter = build_image_overlay_filter(video_probe, overlay_probe);
             args.push("-filter_complex".to_string());
-            args.push("[0:v][1:v]overlay=0:0:format=auto".to_string());
+            args.push(filter);
+            args.push("-map".to_string());
+            args.push("[vout]".to_string());
             args.push("-frames:v".to_string());
             args.push("1".to_string());
             append_image_encoding_args(
@@ -418,24 +628,143 @@ fn build_ffmpeg_overlay_args(
             );
         }
         MediaKind::Video => {
+            // Let ffmpeg autorotate handle rotation natively. We use probed
+            // display dimensions for scaling, so autorotate won't conflict.
+            args.push("-y".to_string());
+            args.push("-i".to_string());
+            args.push(base_media_path.to_string_lossy().to_string());
             args.push("-i".to_string());
             args.push(overlay_path.to_string_lossy().to_string());
+            args.push("-threads".to_string());
+            args.push("0".to_string());
+
+            let filter = build_video_overlay_filter(video_probe, overlay_probe);
             args.push("-filter_complex".to_string());
-            args.push(
-                "[1:v]format=rgba[ovsrc];[ovsrc][0:v]scale2ref=w=main_w:h=main_h[ov][base];[base][ov]overlay=0:0:format=auto:eof_action=repeat,format=yuv420p[vout]"
-                    .to_string(),
-            );
+            args.push(filter);
             args.push("-map".to_string());
             args.push("[vout]".to_string());
             args.push("-map".to_string());
             args.push("0:a?".to_string());
-            args.push("-shortest".to_string());
+
+            // Use explicit duration limit instead of -shortest to prevent
+            // hangs when the overlay stream confuses EOF detection.
+            if let Some(probe) = video_probe {
+                if probe.duration_secs > 0.0 {
+                    args.push("-t".to_string());
+                    args.push(format!("{:.3}", probe.duration_secs));
+                }
+            } else {
+                args.push("-shortest".to_string());
+            }
+
             append_video_encoding_args(&mut args, encoding_options.video_profile);
         }
     }
 
     args.push(output_path.to_string_lossy().to_string());
     args
+}
+
+/// Build a filter graph for compositing a video with a PNG overlay.
+///
+/// Strategy:
+/// 1. Normalize video rotation with explicit `transpose` (deterministic).
+/// 2. Compute target resolution as `max(video_display, overlay)` to preserve
+///    overlay text/graphics readability.
+/// 3. Scale both streams to target, then overlay.
+fn build_video_overlay_filter(
+    video_probe: Option<&MediaProbe>,
+    overlay_probe: Option<&ImageProbe>,
+) -> String {
+    let (vid_w, vid_h, _rotation) = match video_probe {
+        Some(p) => (p.display_width, p.display_height, p.rotation),
+        None => (0, 0, 0),
+    };
+    let (ov_w, ov_h) = match overlay_probe {
+        Some(p) => (p.width, p.height),
+        None => (0, 0),
+    };
+
+    // If we have no probe data, fall back to a simple scale2ref approach.
+    if vid_w == 0 || vid_h == 0 || ov_w == 0 || ov_h == 0 {
+        return "[1:v]format=rgba[ovsrc];[ovsrc][0:v]scale2ref=w=main_w:h=main_h[ov][base];\
+                [base][ov]overlay=0:0:format=auto,format=yuv420p[vout]"
+            .to_string();
+    }
+
+    // Target = the larger canvas so we never downscale either stream.
+    let target_w = vid_w.max(ov_w);
+    let target_h = vid_h.max(ov_h);
+    // Ensure dimensions are even (required by H.264 / yuv420p).
+    let target_w = (target_w + 1) & !1;
+    let target_h = (target_h + 1) & !1;
+
+    let mut parts: Vec<String> = Vec::new();
+
+    // Step 1: Scale base video to target dimensions.
+    // Rotation is handled by ffmpeg autorotate (default ON), so the frames
+    // arriving in the filter graph are already in display orientation.
+    parts.push(format!(
+        "[0:v]scale={target_w}:{target_h}:flags=lanczos[base]"
+    ));
+
+    // Step 2: Scale overlay to target dimensions.
+    parts.push(format!(
+        "[1:v]format=rgba,scale={target_w}:{target_h}:flags=lanczos[ov]"
+    ));
+
+    // Step 3: Overlay and output to yuv420p.
+    parts.push("[base][ov]overlay=0:0:format=auto,format=yuv420p[vout]".to_string());
+
+    parts.join(";")
+}
+
+/// Build a filter graph for compositing an image with a PNG overlay.
+///
+/// Scales the smaller input up to the larger to avoid cropping or gaps.
+fn build_image_overlay_filter(
+    base_probe: Option<&MediaProbe>,
+    overlay_probe: Option<&ImageProbe>,
+) -> String {
+    // For images, MediaProbe width/height are the actual dimensions (no rotation concern).
+    let (base_w, base_h) = match base_probe {
+        Some(p) => (p.width, p.height),
+        None => (0, 0),
+    };
+    let (ov_w, ov_h) = match overlay_probe {
+        Some(p) => (p.width, p.height),
+        None => (0, 0),
+    };
+
+    // No probe data → simple overlay.
+    if base_w == 0 || base_h == 0 || ov_w == 0 || ov_h == 0 {
+        return "[0:v][1:v]overlay=0:0:format=auto[vout]".to_string();
+    }
+
+    let target_w = base_w.max(ov_w);
+    let target_h = base_h.max(ov_h);
+    let target_w = (target_w + 1) & !1;
+    let target_h = (target_h + 1) & !1;
+
+    format!(
+        "[0:v]scale={target_w}:{target_h}:flags=lanczos[base];\
+         [1:v]format=rgba,scale={target_w}:{target_h}:flags=lanczos[ov];\
+         [base][ov]overlay=0:0:format=auto[vout]"
+    )
+}
+
+/// Maps rotation degrees to the ffmpeg `transpose` filter value.
+///
+/// Returns `None` when no rotation is needed (0° or 180° handled by hflip/vflip
+/// but 180° is rare for Snapchat content; we handle ±90/270 which is the common case).
+#[allow(dead_code)]
+fn transpose_value(rotation: i32) -> Option<&'static str> {
+    match rotation {
+        90 | -270 => Some("1"),              // 90° clockwise
+        -90 | 270 => Some("2"),              // 90° counter-clockwise
+        180 | -180 => Some("2,transpose=2"), // 180° = two 90° rotations
+        _ => None,
+    }
 }
 
 fn build_ffmpeg_video_normalize_args(
@@ -874,8 +1203,8 @@ pub async fn verify_video_integrity(
         let Some(codec) = codec else {
             eprintln!(
                 "[media-verify] missing codec_name in ffprobe output for '{}': {}",
-                video_path.display()
-                , line
+                video_path.display(),
+                line
             );
             return Ok(false);
         };
@@ -922,9 +1251,10 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        build_ffmpeg_metadata_args, build_ffmpeg_overlay_args, cleanup_intermediate_files,
-        media_kind_from_path, normalize_datetime_for_ffmpeg, parse_coordinates, ImageOutputFormat,
-        ImageQuality, MediaEncodingOptions, MediaKind, VideoOutputProfile,
+        build_ffmpeg_metadata_args, build_ffmpeg_overlay_args, build_image_overlay_filter,
+        build_video_overlay_filter, cleanup_intermediate_files, media_kind_from_path,
+        normalize_datetime_for_ffmpeg, parse_coordinates, transpose_value, ImageOutputFormat,
+        ImageProbe, ImageQuality, MediaEncodingOptions, MediaKind, MediaProbe, VideoOutputProfile,
     };
 
     #[test]
@@ -963,6 +1293,8 @@ mod tests {
                 image_format: ImageOutputFormat::Jpg,
                 image_quality: ImageQuality::Full,
             },
+            None,
+            None,
         );
 
         assert!(args.contains(&"-frames:v".to_string()));
@@ -981,6 +1313,8 @@ mod tests {
                 image_format: ImageOutputFormat::Jpg,
                 image_quality: ImageQuality::Full,
             },
+            None,
+            None,
         );
 
         assert!(args.contains(&"libx264".to_string()));
@@ -1051,5 +1385,186 @@ mod tests {
             .expect("cleanup should succeed when paths match");
 
         assert!(final_path.exists());
+    }
+
+    #[test]
+    fn video_overlay_filter_no_rotation_same_resolution() {
+        let video = MediaProbe {
+            width: 1080,
+            height: 1920,
+            rotation: 0,
+            display_width: 1080,
+            display_height: 1920,
+            duration_secs: 6.0,
+            has_audio: true,
+        };
+        let overlay = ImageProbe {
+            width: 1080,
+            height: 1920,
+        };
+        let filter = build_video_overlay_filter(Some(&video), Some(&overlay));
+        assert!(filter.contains("scale=1080:1920"));
+        assert!(!filter.contains("transpose"));
+        assert!(filter.contains("[vout]"));
+    }
+
+    #[test]
+    fn video_overlay_filter_rotation_90() {
+        let video = MediaProbe {
+            width: 960,
+            height: 540,
+            rotation: 90,
+            display_width: 540,
+            display_height: 960,
+            duration_secs: 6.0,
+            has_audio: true,
+        };
+        let overlay = ImageProbe {
+            width: 1080,
+            height: 1920,
+        };
+        let filter = build_video_overlay_filter(Some(&video), Some(&overlay));
+        // Rotation is handled by ffmpeg autorotate, not by transpose in the filter.
+        assert!(!filter.contains("transpose"));
+        assert!(filter.contains("scale=1080:1920"));
+    }
+
+    #[test]
+    fn video_overlay_filter_rotation_neg90() {
+        let video = MediaProbe {
+            width: 960,
+            height: 540,
+            rotation: -90,
+            display_width: 540,
+            display_height: 960,
+            duration_secs: 6.0,
+            has_audio: true,
+        };
+        let overlay = ImageProbe {
+            width: 1080,
+            height: 1920,
+        };
+        let filter = build_video_overlay_filter(Some(&video), Some(&overlay));
+        // Rotation is handled by ffmpeg autorotate, not by transpose in the filter.
+        assert!(!filter.contains("transpose"));
+        assert!(filter.contains("scale=1080:1920"));
+    }
+
+    #[test]
+    fn video_overlay_filter_upscales_video_to_overlay() {
+        let video = MediaProbe {
+            width: 540,
+            height: 960,
+            rotation: 0,
+            display_width: 540,
+            display_height: 960,
+            duration_secs: 4.0,
+            has_audio: false,
+        };
+        let overlay = ImageProbe {
+            width: 1080,
+            height: 1920,
+        };
+        let filter = build_video_overlay_filter(Some(&video), Some(&overlay));
+        // Target should be 1080x1920 (the larger)
+        assert!(filter.contains("scale=1080:1920"));
+    }
+
+    #[test]
+    fn video_overlay_filter_uses_even_dimensions() {
+        let video = MediaProbe {
+            width: 539,
+            height: 961,
+            rotation: 0,
+            display_width: 539,
+            display_height: 961,
+            duration_secs: 4.0,
+            has_audio: false,
+        };
+        let overlay = ImageProbe {
+            width: 1079,
+            height: 1919,
+        };
+        let filter = build_video_overlay_filter(Some(&video), Some(&overlay));
+        // Both target dims should be even
+        assert!(filter.contains("scale=1080:1920"));
+    }
+
+    #[test]
+    fn video_overlay_filter_fallback_without_probes() {
+        let filter = build_video_overlay_filter(None, None);
+        assert!(filter.contains("scale2ref"));
+        assert!(filter.contains("[vout]"));
+    }
+
+    #[test]
+    fn image_overlay_filter_scales_to_larger() {
+        let base = MediaProbe {
+            width: 540,
+            height: 960,
+            rotation: 0,
+            display_width: 540,
+            display_height: 960,
+            duration_secs: 0.0,
+            has_audio: false,
+        };
+        let overlay = ImageProbe {
+            width: 1080,
+            height: 1920,
+        };
+        let filter = build_image_overlay_filter(Some(&base), Some(&overlay));
+        assert!(filter.contains("scale=1080:1920"));
+        assert!(filter.contains("[vout]"));
+    }
+
+    #[test]
+    fn image_overlay_filter_fallback_without_probes() {
+        let filter = build_image_overlay_filter(None, None);
+        assert!(filter.contains("overlay=0:0"));
+        assert!(filter.contains("[vout]"));
+    }
+
+    #[test]
+    fn transpose_value_maps_correctly() {
+        assert_eq!(transpose_value(0), None);
+        assert_eq!(transpose_value(90), Some("1"));
+        assert_eq!(transpose_value(-90), Some("2"));
+        assert_eq!(transpose_value(270), Some("2"));
+        assert_eq!(transpose_value(-270), Some("1"));
+        assert!(transpose_value(180).is_some());
+    }
+
+    #[test]
+    fn video_overlay_args_use_autorotate_and_duration() {
+        let video = MediaProbe {
+            width: 960,
+            height: 540,
+            rotation: -90,
+            display_width: 540,
+            display_height: 960,
+            duration_secs: 6.0,
+            has_audio: true,
+        };
+        let overlay = ImageProbe {
+            width: 1080,
+            height: 1920,
+        };
+        let args = build_ffmpeg_overlay_args(
+            Path::new("base.mp4"),
+            Path::new("overlay.png"),
+            Path::new("output.mp4"),
+            MediaKind::Video,
+            MediaEncodingOptions {
+                video_profile: VideoOutputProfile::Mp4Compatible,
+                image_format: ImageOutputFormat::Jpg,
+                image_quality: ImageQuality::Full,
+            },
+            Some(&video),
+            Some(&overlay),
+        );
+        // Autorotate should NOT be disabled — let ffmpeg handle rotation.
+        assert!(!args.contains(&"-noautorotate".to_string()));
+        assert!(args.contains(&"-t".to_string()));
+        assert!(!args.contains(&"-shortest".to_string()));
     }
 }

@@ -9,7 +9,7 @@ use sqlx::SqlitePool;
 
 use crate::core::media;
 
-const FFMPEG_TIMEOUT_SECS: u64 = 50;
+const FFMPEG_TIMEOUT_THUMBNAIL_SECS: u64 = 30;
 const FFMPEG_POLL_INTERVAL_MS: u64 = 200;
 
 #[derive(Debug)]
@@ -225,14 +225,13 @@ pub async fn process_media(input: ProcessMediaInput) -> Result<ProcessMediaResul
         image_quality: input.image_quality,
     };
 
-    let merge_result =
-        merge_staged_media(
-            base_media_path,
-            effective_overlay_path,
-            &final_media_path,
-            encoding_options,
-        )
-            .await;
+    let merge_result = merge_staged_media(
+        base_media_path,
+        effective_overlay_path,
+        &final_media_path,
+        encoding_options,
+    )
+    .await;
 
     if let Err(error) = merge_result {
         if effective_overlay_path.is_some() {
@@ -437,12 +436,45 @@ async fn merge_staged_media(
 ) -> Result<(), ProcessorError> {
     let existing_overlay_path = resolve_existing_overlay_path(overlay_path).await?;
 
+    // Probe base media and overlay for resolution-aware composition.
+    let base_probe = match media::probe_media(base_media_path).await {
+        Ok(probe) => Some(probe),
+        Err(e) => {
+            eprintln!(
+                "[processor-debug] probe failed for base='{}': {e}",
+                base_media_path.display()
+            );
+            None
+        }
+    };
+
+    let overlay_probe = if let Some(ov_path) = existing_overlay_path.as_deref() {
+        match media::probe_image(ov_path).await {
+            Ok(probe) => Some(probe),
+            Err(e) => {
+                eprintln!(
+                    "[processor-debug] probe failed for overlay='{}': {e}",
+                    ov_path.display()
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     if let Some(overlay_path) = existing_overlay_path.as_deref() {
         eprintln!(
-            "[processor-debug] applying overlay base='{}' overlay='{}' output='{}'",
+            "[processor-debug] applying overlay base='{}' overlay='{}' output='{}' \
+             base_dims={}x{} overlay_dims={}x{} rotation={}",
             base_media_path.display(),
             overlay_path.display(),
-            output_path.display()
+            output_path.display(),
+            base_probe.as_ref().map_or(0, |p| p.display_width),
+            base_probe.as_ref().map_or(0, |p| p.display_height),
+            overlay_probe.as_ref().map_or(0, |p| p.width),
+            overlay_probe.as_ref().map_or(0, |p| p.height),
+            base_probe.as_ref().map_or(0, |p| p.rotation),
         );
     } else {
         eprintln!(
@@ -457,6 +489,8 @@ async fn merge_staged_media(
         existing_overlay_path.as_deref(),
         output_path,
         encoding_options,
+        base_probe.as_ref(),
+        overlay_probe.as_ref(),
     )
     .await?;
 
@@ -515,7 +549,7 @@ async fn concat_video_parts(parts: &[PathBuf], output_path: &Path) -> Result<(),
             "copy".to_string(),
             output_path.to_string_lossy().to_string(),
         ];
-        let concat_result = run_ffmpeg_with_timeout(&args);
+        let concat_result = run_ffmpeg_with_timeout(&args, FFMPEG_TIMEOUT_THUMBNAIL_SECS);
 
         let _ = std::fs::remove_file(&list_path);
         concat_result?;
@@ -557,40 +591,47 @@ async fn generate_webp_thumbnail(
 
         let media_path_arg = media_path.to_string_lossy().to_string();
         let thumbnail_path_arg = thumbnail_path.to_string_lossy().to_string();
-        let mut args = vec!["-y".to_string(), "-i".to_string(), media_path_arg];
+        let mut args: Vec<String> = Vec::new();
 
         if is_video {
+            // Seek to 1 second before the end so the thumbnail captures the
+            // overlay text/graphics that are composited onto every frame.
+            // -sseof must come before -i to be an input option.
+            args.push("-y".to_string());
+            args.push("-sseof".to_string());
+            args.push("-1".to_string());
+            args.push("-i".to_string());
+            args.push(media_path_arg);
             args.push("-map".to_string());
             args.push("0:v:0".to_string());
-            args.push("-vf".to_string());
-            let scale_filter = format!(
-                "thumbnail,crop=iw-2:ih-2:1:1,scale={0}:{0}:force_original_aspect_ratio=decrease:flags=lanczos",
-                thumbnail_max_dimension
-            );
-            args.push(
-                scale_filter,
-            );
-        } else {
             args.push("-vf".to_string());
             let scale_filter = format!(
                 "crop=iw-2:ih-2:1:1,scale={0}:{0}:force_original_aspect_ratio=decrease:flags=lanczos",
                 thumbnail_max_dimension
             );
-            args.push(
-                scale_filter,
+            args.push(scale_filter);
+        } else {
+            args.push("-y".to_string());
+            args.push("-i".to_string());
+            args.push(media_path_arg);
+            args.push("-vf".to_string());
+            let scale_filter = format!(
+                "crop=iw-2:ih-2:1:1,scale={0}:{0}:force_original_aspect_ratio=decrease:flags=lanczos",
+                thumbnail_max_dimension
             );
+            args.push(scale_filter);
         }
 
         args.push("-frames:v".to_string());
         args.push("1".to_string());
         args.push(thumbnail_path_arg);
 
-        run_ffmpeg_with_timeout(&args)
+        run_ffmpeg_with_timeout(&args, FFMPEG_TIMEOUT_THUMBNAIL_SECS)
     })
     .await?
 }
 
-fn run_ffmpeg_with_timeout(args: &[String]) -> Result<(), ProcessorError> {
+fn run_ffmpeg_with_timeout(args: &[String], timeout_secs: u64) -> Result<(), ProcessorError> {
     let stderr_log_path = std::env::temp_dir().join(format!(
         "memorysnaper-ffmpeg-{}-{}.log",
         std::process::id(),
@@ -625,7 +666,7 @@ fn run_ffmpeg_with_timeout(args: &[String]) -> Result<(), ProcessorError> {
             break status;
         }
 
-        if started_at.elapsed() >= Duration::from_secs(FFMPEG_TIMEOUT_SECS) {
+        if started_at.elapsed() >= Duration::from_secs(timeout_secs) {
             timed_out = true;
             let _ = child.kill();
             break child.wait().map_err(ProcessorError::Io)?;
@@ -642,7 +683,7 @@ fn run_ffmpeg_with_timeout(args: &[String]) -> Result<(), ProcessorError> {
             status: None,
             stderr: format!(
                 "ffmpeg timed out after {}s{}{}",
-                FFMPEG_TIMEOUT_SECS,
+                timeout_secs,
                 if stderr_text.trim().is_empty() {
                     ""
                 } else {
