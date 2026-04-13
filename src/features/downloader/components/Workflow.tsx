@@ -593,6 +593,9 @@ export function Workflow() {
     return segments[segments.length - 1] ?? path;
   };
 
+  // Snapchat export ids are not always RFC UUIDs; accept alphanumeric ids with optional dashes.
+  const SNAPCHAT_EXPORT_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+
   const parseSnapchatZipName = (fileName: string): { uuid: string; partNumber: number | null } | null => {
     const lowered = fileName.toLowerCase();
     const withoutExtension = lowered.endsWith(".zip") ? lowered.slice(0, -4) : lowered;
@@ -606,15 +609,19 @@ export function Workflow() {
       return null;
     }
 
-    const maybePart = rest.match(/^(?<uuid>[0-9a-f-]+)-(?<part>\d+)$/);
-    if (maybePart?.groups?.uuid && maybePart.groups.part) {
+    const maybePart = rest.match(/^(?<uuid>.+)-(?<part>\d+)$/);
+    if (
+      maybePart?.groups?.uuid
+      && maybePart.groups.part
+      && SNAPCHAT_EXPORT_ID_PATTERN.test(maybePart.groups.uuid)
+    ) {
       return {
         uuid: maybePart.groups.uuid,
         partNumber: Number(maybePart.groups.part),
       };
     }
 
-    if (/^[0-9a-f-]+$/.test(rest)) {
+    if (SNAPCHAT_EXPORT_ID_PATTERN.test(rest)) {
       return { uuid: rest, partNumber: null };
     }
 

@@ -76,6 +76,18 @@ export function StorageBar({ exportPath, zipPaths, onEstimatedBytesChange }: Sto
     };
   }, [exportPath, zipKey]);
 
+  useEffect(() => {
+    const estimatedBytes =
+      diskSpace && zipPaths.length > 0 && totalZipBytes > 0
+        ? estimateRequiredBytes(totalZipBytes)
+        : 0;
+
+    if (estimatedBytes !== prevEstimated.current) {
+      prevEstimated.current = estimatedBytes;
+      onEstimatedBytesChange?.(estimatedBytes);
+    }
+  }, [diskSpace, totalZipBytes, zipPaths.length, onEstimatedBytesChange]);
+
   if (!diskSpace || zipPaths.length === 0 || totalZipBytes === 0) {
     return null;
   }
@@ -83,12 +95,6 @@ export function StorageBar({ exportPath, zipPaths, onEstimatedBytesChange }: Sto
   const { totalBytes, freeBytes } = diskSpace;
   const usedBytes = totalBytes - freeBytes;
   const estimatedBytes = estimateRequiredBytes(totalZipBytes);
-
-  // Notify parent of estimated size for disclaimer display (post-render).
-  if (estimatedBytes !== prevEstimated.current) {
-    prevEstimated.current = estimatedBytes;
-    onEstimatedBytesChange?.(estimatedBytes);
-  }
 
   const insufficient = estimatedBytes > freeBytes;
 

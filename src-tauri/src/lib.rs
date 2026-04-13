@@ -234,6 +234,13 @@ fn emit_session_log(window: &tauri::Window, message: impl Into<String>) -> Resul
         .map_err(|error| format!("failed to emit session log event: {error}"))
 }
 
+fn is_snapchat_export_id(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '-')
+}
+
 fn parse_snapchat_zip_name(file_stem: &str) -> Result<(String, Option<u32>), String> {
     let prefix = "mydata~";
     if !file_stem.starts_with(prefix) {
@@ -245,35 +252,26 @@ fn parse_snapchat_zip_name(file_stem: &str) -> Result<(String, Option<u32>), Str
         return Err(format!("zip '{file_stem}' is missing uuid segment"));
     }
 
-    let (uuid_part, part_number) =
-        if let Some((uuid_candidate, number_candidate)) = rest.rsplit_once(' ') {
-            if number_candidate
-                .chars()
-                .all(|character| character.is_ascii_digit())
-            {
-                let parsed_number = number_candidate.parse::<u32>().map_err(|error| {
-                    format!("invalid zip part number in '{file_stem}': {error}")
-                })?;
-                (uuid_candidate, Some(parsed_number))
-            } else {
-                (rest, None)
-            }
-        } else {
-            (rest, None)
-        };
-
-    let is_uuid_like = !uuid_part.is_empty()
-        && uuid_part
+    if let Some((uuid_candidate, number_candidate)) = rest.rsplit_once('-') {
+        if number_candidate
             .chars()
-            .all(|character| character.is_ascii_hexdigit() || character == '-');
-
-    if !is_uuid_like {
-        return Err(format!(
-            "zip '{file_stem}' has invalid uuid segment '{uuid_part}'"
-        ));
+            .all(|character| character.is_ascii_digit())
+            && is_snapchat_export_id(uuid_candidate)
+        {
+            let parsed_number = number_candidate
+                .parse::<u32>()
+                .map_err(|error| format!("invalid zip part number in '{file_stem}': {error}"))?;
+            return Ok((uuid_candidate.to_string(), Some(parsed_number)));
+        }
     }
 
-    Ok((uuid_part.to_string(), part_number))
+    if is_snapchat_export_id(rest) {
+        return Ok((rest.to_string(), None));
+    }
+
+    Err(format!(
+        "zip '{file_stem}' must use 'mydata~<uuid>.zip' or 'mydata~<uuid>-<num>.zip' naming"
+    ))
 }
 
 fn zip_contains_required_memories_entry(zip_path: &std::path::Path) -> Result<bool, String> {
