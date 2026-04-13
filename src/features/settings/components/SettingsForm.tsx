@@ -62,6 +62,7 @@ import {
   getExportPath,
   resetAllAppData,
   setExportPath,
+  stopProcessingSession,
 } from "@/lib/memories-api";
 import { cn } from "@/lib/utils";
 import { HelpTooltip } from "@/components/HelpTooltip";
@@ -360,6 +361,13 @@ export function SettingsForm() {
     setIsResettingAllData(true);
 
     try {
+      // Signal any running extractor/downloader to stop before wiping data.
+      try {
+        await stopProcessingSession();
+      } catch {
+        // Best-effort — the backend will also set stopped=true inside reset_all_app_data.
+      }
+
       await resetAllAppData();
       clearPersistedAppClientState();
       window.location.reload();

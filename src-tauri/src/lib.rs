@@ -1834,6 +1834,13 @@ async fn has_viewer_items(app: tauri::AppHandle) -> Result<bool, String> {
 
 #[tauri::command]
 async fn reset_all_app_data(app: tauri::AppHandle) -> Result<(), String> {
+    // Signal any running processing/download loop to stop before wiping state.
+    core::state::set_stopped(true);
+    core::state::set_paused(false);
+
+    // Give active tasks a moment to notice the stop flag and release their DB connections.
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
     let database_url = memories_db_url(&app)?;
     let pool = sqlx::SqlitePool::connect(&database_url)
         .await
@@ -1907,6 +1914,9 @@ async fn reset_all_app_data(app: tauri::AppHandle) -> Result<(), String> {
 
     std::fs::create_dir_all(&raw_cache_path)
         .map_err(|error| format!("failed to recreate .raw_cache directory: {error}"))?;
+
+    // Reset the stop flag so a fresh session can start after the wipe.
+    core::state::reset();
 
     Ok(())
 }
