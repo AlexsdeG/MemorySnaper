@@ -29,6 +29,7 @@ import {
   createViewerExportZip,
   openMediaFolder,
   getViewerItems,
+  onProcessProgress,
   type ViewerMediaKind,
 } from "@/lib/memories-api";
 import { GuideDialog } from "@/components/GuideDialog";
@@ -78,6 +79,8 @@ export function ViewerPlaceholder() {
   const isLoadingPageRef = useRef(false);
   const hasMoreRef = useRef(true);
   const nextOffsetRef = useRef(0);
+  const cacheVersionRef = useRef(Date.now());
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const viewerGuide = getGuideById("viewer-usage") ?? null;
 
   const filterMeta = useMemo(() => extractFilterMeta(items), [items]);
@@ -101,7 +104,7 @@ export function ViewerPlaceholder() {
       const viewerRows = await getViewerItems(offset, VIEWER_PAGE_SIZE);
       const mappedItems = viewerRows.map((row) => ({
         id: String(row.memoryItemId),
-        thumbnailSrc: convertFileSrc(row.thumbnailPath, "asset"),
+        thumbnailSrc: `${convertFileSrc(row.thumbnailPath, "asset")}?v=${cacheVersionRef.current}`,
         mediaSrc: convertFileSrc(row.mediaPath, "asset"),
         mediaKind: row.mediaKind,
         mediaFormat: row.mediaFormat ?? undefined,
@@ -148,6 +151,42 @@ export function ViewerPlaceholder() {
     setHasMore(true);
     setStatus(t("viewer.status.loading"));
     void loadViewerItems(true);
+  }, [loadViewerItems]);
+
+  // Listen to process-progress events and debounce-reload the viewer
+  // so newly processed thumbnails appear without a manual tab switch.
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+
+    const scheduleReload = () => {
+      if (reloadTimerRef.current) {
+        clearTimeout(reloadTimerRef.current);
+      }
+      reloadTimerRef.current = setTimeout(() => {
+        if (cancelled) return;
+        cacheVersionRef.current = Date.now();
+        hasMoreRef.current = true;
+        nextOffsetRef.current = 0;
+        setHasMore(true);
+        void loadViewerItems(true);
+      }, 2_000);
+    };
+
+    onProcessProgress((payload) => {
+      if (payload.status === "success" || payload.status === "duplicate") {
+        scheduleReload();
+      }
+    }).then((fn) => {
+      if (cancelled) { fn(); return; }
+      unlisten = fn;
+    });
+
+    return () => {
+      cancelled = true;
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+      unlisten?.();
+    };
   }, [loadViewerItems]);
 
   const onNearEnd = useCallback(() => {
