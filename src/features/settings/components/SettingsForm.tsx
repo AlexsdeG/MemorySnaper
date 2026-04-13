@@ -33,6 +33,8 @@ import {
   clearPersistedAppClientState,
   parseImageOutputFormatPreference,
   parseImageQualityPreference,
+  parseEncodingHwAccelPreference,
+  parseOverlayStrategyPreference,
   parseThumbnailQualityPreference,
   parseStartupPagePreference,
   parseThemePreference,
@@ -40,9 +42,11 @@ import {
   readAppSettings,
   writeAppSettings,
   type AccentColor,
+  type EncodingHwAccelPreference,
   type ImageOutputFormatPreference,
   type ImageQualityPreference,
   type HardwareAccelerationPreference,
+  type OverlayStrategyPreference,
   type ThumbnailQualityPreference,
   type StartupPagePreference,
   type ThemePreference,
@@ -77,6 +81,8 @@ const videoProfileOptions: VideoProfilePreference[] = [
 ];
 const imageOutputFormatOptions: ImageOutputFormatPreference[] = ["jpg", "webp", "png"];
 const imageQualityOptions: ImageQualityPreference[] = ["full", "balanced", "fast"];
+const encodingHwAccelOptions: EncodingHwAccelPreference[] = ["auto", "nvenc", "qsv", "vaapi", "disabled"];
+const overlayStrategyOptions: OverlayStrategyPreference[] = ["upscale", "downscale_sharpen"];
 
 const ACCENT_COLORS: { value: AccentColor; swatch: string }[] = [
   { value: "yellow", swatch: "bg-yellow-400" },
@@ -151,6 +157,19 @@ const imageQualityLabelKeys: Record<ImageQualityPreference, TranslationKey> = {
   fast: "settings.form.imageQuality.fast",
 };
 
+const encodingHwAccelLabelKeys: Record<EncodingHwAccelPreference, TranslationKey> = {
+  auto: "settings.form.encodingHwAccel.auto",
+  nvenc: "settings.form.encodingHwAccel.nvenc",
+  qsv: "settings.form.encodingHwAccel.qsv",
+  vaapi: "settings.form.encodingHwAccel.vaapi",
+  disabled: "settings.form.encodingHwAccel.disabled",
+};
+
+const overlayStrategyLabelKeys: Record<OverlayStrategyPreference, TranslationKey> = {
+  upscale: "settings.form.overlayStrategy.upscale",
+  downscale_sharpen: "settings.form.overlayStrategy.downscale_sharpen",
+};
+
 const hwAccelLabelKeys: Record<HardwareAccelerationPreference, TranslationKey> = {
   enabled: "settings.form.videoHardwareAcceleration.enabled",
   disabled: "settings.form.videoHardwareAcceleration.disabled",
@@ -185,6 +204,8 @@ export function SettingsForm() {
   const [videoProfile, setVideoProfile] = useState<VideoProfilePreference>("auto");
   const [imageOutputFormat, setImageOutputFormat] = useState<ImageOutputFormatPreference>("jpg");
   const [imageQuality, setImageQuality] = useState<ImageQualityPreference>("full");
+  const [encodingHwAccel, setEncodingHwAccel] = useState<EncodingHwAccelPreference>("auto");
+  const [overlayStrategy, setOverlayStrategy] = useState<OverlayStrategyPreference>("upscale");
   const [videoAutoplay, setVideoAutoplay] = useState(true);
   const [videoMutedByDefault, setVideoMutedByDefault] = useState(true);
   const [videoHardwareAcceleration, setVideoHardwareAcceleration] =
@@ -210,6 +231,8 @@ export function SettingsForm() {
     setVideoProfile(settings.videoProfile);
     setImageOutputFormat(settings.imageOutputFormat);
     setImageQuality(settings.imageQuality);
+    setEncodingHwAccel(settings.encodingHwAccel);
+    setOverlayStrategy(settings.overlayStrategy);
     setVideoAutoplay(settings.videoAutoplay);
     setVideoMutedByDefault(settings.videoMutedByDefault);
     setVideoHardwareAcceleration(settings.videoHardwareAcceleration);
@@ -237,6 +260,8 @@ export function SettingsForm() {
       videoProfile,
       imageOutputFormat,
       imageQuality,
+      encodingHwAccel,
+      overlayStrategy,
       videoAutoplay,
       videoMutedByDefault,
       videoHardwareAcceleration,
@@ -246,8 +271,10 @@ export function SettingsForm() {
   }, [
     accentColor,
     concurrentDownloads,
+    encodingHwAccel,
     hasLoadedSettings,
     languagePreference,
+    overlayStrategy,
     requestsPerMinute,
     startupPagePreference,
     thumbnailQuality,
@@ -618,6 +645,50 @@ export function SettingsForm() {
               {imageQualityOptions.map((option) => (
                 <SelectItem key={option} value={option}>
                   {t(imageQualityLabelKeys[option])}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5">
+            <Label>{t("settings.form.encodingHwAccel")}</Label>
+            <HelpTooltip helpKey="help.settings.encodingHwAccel" />
+          </div>
+          <Select
+            value={encodingHwAccel}
+            onValueChange={(value) => { setEncodingHwAccel(parseEncodingHwAccelPreference(value)); }}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {encodingHwAccelOptions.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {t(encodingHwAccelLabelKeys[option])}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5">
+            <Label>{t("settings.form.overlayStrategy")}</Label>
+            <HelpTooltip helpKey="help.settings.overlayStrategy" />
+          </div>
+          <Select
+            value={overlayStrategy}
+            onValueChange={(value) => { setOverlayStrategy(parseOverlayStrategyPreference(value)); }}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {overlayStrategyOptions.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {t(overlayStrategyLabelKeys[option])}
                 </SelectItem>
               ))}
             </SelectContent>

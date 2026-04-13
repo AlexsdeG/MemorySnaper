@@ -41,9 +41,11 @@ import {
   validateBaseZipArchive,
   type DownloadRateLimitSettings,
   type DownloadProgressPayload,
+  type EncodingHwAccel,
   type ImageOutputFormat,
   type ImageQuality,
   type MissingFileItem,
+  type OverlayStrategy,
   type ThumbnailQuality,
   type ProcessErrorCode,
   type ProcessProgressPayload,
@@ -80,6 +82,8 @@ type ProcessingFormatSettings = {
   videoProfile: VideoProfile;
   imageOutputFormat: ImageOutputFormat;
   imageQuality: ImageQuality;
+  encodingHwAccel: EncodingHwAccel;
+  overlayStrategy: OverlayStrategy;
 };
 
 function loadProcessingFormatSettings(): ProcessingFormatSettings {
@@ -88,6 +92,8 @@ function loadProcessingFormatSettings(): ProcessingFormatSettings {
     videoProfile: settings.videoProfile,
     imageOutputFormat: settings.imageOutputFormat,
     imageQuality: settings.imageQuality,
+    encodingHwAccel: settings.encodingHwAccel,
+    overlayStrategy: settings.overlayStrategy,
   };
 }
 
@@ -909,6 +915,8 @@ export function Workflow() {
         processingFormatSettings.videoProfile,
         processingFormatSettings.imageOutputFormat,
         processingFormatSettings.imageQuality,
+        processingFormatSettings.encodingHwAccel,
+        processingFormatSettings.overlayStrategy,
       );
       setNotice(
         t("downloader.workflow.status.processed", {
@@ -1028,6 +1036,8 @@ export function Workflow() {
         processingFormatSettings.videoProfile,
         processingFormatSettings.imageOutputFormat,
         processingFormatSettings.imageQuality,
+        processingFormatSettings.encodingHwAccel,
+        processingFormatSettings.overlayStrategy,
       );
 
       await stopProcessingSession();

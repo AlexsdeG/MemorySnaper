@@ -16,6 +16,8 @@ export type VideoProfilePreference =
   | "mov_high_quality";
 export type ImageOutputFormatPreference = "jpg" | "webp" | "png";
 export type ImageQualityPreference = "full" | "balanced" | "fast";
+export type EncodingHwAccelPreference = "auto" | "nvenc" | "qsv" | "vaapi" | "disabled";
+export type OverlayStrategyPreference = "upscale" | "downscale_sharpen";
 export type AccentColor = "yellow" | "blue" | "purple" | "green" | "rose";
 
 export type AppSettings = {
@@ -28,6 +30,8 @@ export type AppSettings = {
   videoProfile: VideoProfilePreference;
   imageOutputFormat: ImageOutputFormatPreference;
   imageQuality: ImageQualityPreference;
+  encodingHwAccel: EncodingHwAccelPreference;
+  overlayStrategy: OverlayStrategyPreference;
   videoAutoplay: boolean;
   videoMutedByDefault: boolean;
   videoHardwareAcceleration: HardwareAccelerationPreference;
@@ -45,6 +49,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   videoProfile: "auto",
   imageOutputFormat: "jpg",
   imageQuality: "full",
+  encodingHwAccel: "auto",
+  overlayStrategy: "upscale",
   videoAutoplay: true,
   videoMutedByDefault: true,
   videoHardwareAcceleration: "disabled",
@@ -114,6 +120,32 @@ export function parseImageQualityPreference(value: string | null): ImageQualityP
   }
 
   return "full";
+}
+
+export function parseEncodingHwAccelPreference(
+  value: string | null,
+): EncodingHwAccelPreference {
+  if (
+    value === "auto" ||
+    value === "nvenc" ||
+    value === "qsv" ||
+    value === "vaapi" ||
+    value === "disabled"
+  ) {
+    return value;
+  }
+
+  return "auto";
+}
+
+export function parseOverlayStrategyPreference(
+  value: string | null,
+): OverlayStrategyPreference {
+  if (value === "upscale" || value === "downscale_sharpen") {
+    return value;
+  }
+
+  return "upscale";
 }
 
 export function parseHardwareAccelerationPreference(
@@ -198,6 +230,16 @@ function parseSettings(rawValue: string): AppSettings | null {
         ? (Reflect.get(parsedValue, "imageQuality") as string)
         : null,
     );
+    const encodingHwAccel = parseEncodingHwAccelPreference(
+      typeof Reflect.get(parsedValue, "encodingHwAccel") === "string"
+        ? (Reflect.get(parsedValue, "encodingHwAccel") as string)
+        : null,
+    );
+    const overlayStrategy = parseOverlayStrategyPreference(
+      typeof Reflect.get(parsedValue, "overlayStrategy") === "string"
+        ? (Reflect.get(parsedValue, "overlayStrategy") as string)
+        : null,
+    );
     const videoAutoplay = parseBooleanSetting(
       Reflect.get(parsedValue, "videoAutoplay"),
       DEFAULT_SETTINGS.videoAutoplay,
@@ -231,6 +273,8 @@ function parseSettings(rawValue: string): AppSettings | null {
       videoProfile,
       imageOutputFormat,
       imageQuality,
+      encodingHwAccel,
+      overlayStrategy,
       videoAutoplay,
       videoMutedByDefault,
       videoHardwareAcceleration,

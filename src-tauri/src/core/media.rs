@@ -1,6 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -103,11 +104,92 @@ impl ImageQuality {
     }
 }
 
+/// Hardware-accelerated video encoder detected on the system.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub enum HwAccelEncoder {
+    Nvenc,
+    Qsv,
+    Vaapi,
+}
+
+impl HwAccelEncoder {
+    /// The ffmpeg encoder name for H.264 output.
+    pub fn codec_name(self) -> &'static str {
+        match self {
+            Self::Nvenc => "h264_nvenc",
+            Self::Qsv => "h264_qsv",
+            Self::Vaapi => "h264_vaapi",
+        }
+    }
+
+    /// Human-readable label.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Nvenc => "nvenc",
+            Self::Qsv => "qsv",
+            Self::Vaapi => "vaapi",
+        }
+    }
+}
+
+/// User preference for hardware-accelerated encoding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HwAccelPreference {
+    Auto,
+    Nvenc,
+    Qsv,
+    Vaapi,
+    Disabled,
+}
+
+impl HwAccelPreference {
+    pub fn from_setting(value: Option<&str>) -> Self {
+        match value.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
+            Some("nvenc") => Self::Nvenc,
+            Some("qsv") => Self::Qsv,
+            Some("vaapi") => Self::Vaapi,
+            Some("disabled") => Self::Disabled,
+            Some("auto") | None | Some(_) => Self::Auto,
+        }
+    }
+
+    /// Resolve to a concrete encoder (or `None` for software).
+    pub fn resolve(self) -> Option<HwAccelEncoder> {
+        match self {
+            Self::Auto => best_hw_encoder(),
+            Self::Nvenc => Some(HwAccelEncoder::Nvenc),
+            Self::Qsv => Some(HwAccelEncoder::Qsv),
+            Self::Vaapi => Some(HwAccelEncoder::Vaapi),
+            Self::Disabled => None,
+        }
+    }
+}
+
+/// Overlay composition strategy when video and overlay have different resolutions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverlayStrategy {
+    /// Scale video up to the overlay resolution (default, preserves text quality).
+    Upscale,
+    /// Scale overlay down to the video resolution with a sharpening filter (faster).
+    DownscaleWithSharpen,
+}
+
+impl OverlayStrategy {
+    pub fn from_setting(value: Option<&str>) -> Self {
+        match value.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
+            Some("downscale_sharpen") => Self::DownscaleWithSharpen,
+            Some("upscale") | None | Some(_) => Self::Upscale,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct MediaEncodingOptions {
     pub video_profile: VideoOutputProfile,
     pub image_format: ImageOutputFormat,
     pub image_quality: ImageQuality,
+    pub hw_accel: HwAccelPreference,
+    pub overlay_strategy: OverlayStrategy,
 }
 
 #[derive(Debug)]
@@ -244,7 +326,7 @@ pub async fn merge_media_with_optional_overlay(
                         let args = build_ffmpeg_video_normalize_args(
                             &base_media_path,
                             &ffmpeg_output_path,
-                            encoding_options.video_profile,
+                            encoding_options,
                         );
                         run_ffmpeg(args, FFMPEG_TIMEOUT_TRANSCODE_SECS)?;
                         std::fs::rename(&ffmpeg_output_path, &output_path)?;
@@ -604,7 +686,18 @@ fn build_ffmpeg_overlay_args(
     video_probe: Option<&MediaProbe>,
     overlay_probe: Option<&ImageProbe>,
 ) -> Vec<String> {
-    let mut args: Vec<String> = Vec::new();
+    let hw_encoder = if matches!(media_kind, MediaKind::Video) {
+        resolve_hw_encoder(&encoding_options)
+    } else {
+        None
+    };
+
+    // VAAPI: device init must come before any -i inputs.
+    let mut args: Vec<String> = if matches!(hw_encoder, Some(HwAccelEncoder::Vaapi)) {
+        vaapi_init_args()
+    } else {
+        Vec::new()
+    };
 
     match media_kind {
         MediaKind::Image => {
@@ -614,7 +707,11 @@ fn build_ffmpeg_overlay_args(
             args.push("-i".to_string());
             args.push(overlay_path.to_string_lossy().to_string());
 
-            let filter = build_image_overlay_filter(video_probe, overlay_probe);
+            let filter = build_image_overlay_filter(
+                video_probe,
+                overlay_probe,
+                encoding_options.overlay_strategy,
+            );
             args.push("-filter_complex".to_string());
             args.push(filter);
             args.push("-map".to_string());
@@ -638,7 +735,12 @@ fn build_ffmpeg_overlay_args(
             args.push("-threads".to_string());
             args.push("0".to_string());
 
-            let filter = build_video_overlay_filter(video_probe, overlay_probe);
+            let filter = build_video_overlay_filter(
+                video_probe,
+                overlay_probe,
+                encoding_options.overlay_strategy,
+                hw_encoder,
+            );
             args.push("-filter_complex".to_string());
             args.push(filter);
             args.push("-map".to_string());
@@ -657,7 +759,11 @@ fn build_ffmpeg_overlay_args(
                 args.push("-shortest".to_string());
             }
 
-            append_video_encoding_args(&mut args, encoding_options.video_profile);
+            append_video_encoding_args(
+                &mut args,
+                encoding_options.video_profile,
+                resolve_hw_encoder(&encoding_options),
+            );
         }
     }
 
@@ -667,14 +773,16 @@ fn build_ffmpeg_overlay_args(
 
 /// Build a filter graph for compositing a video with a PNG overlay.
 ///
-/// Strategy:
-/// 1. Normalize video rotation with explicit `transpose` (deterministic).
-/// 2. Compute target resolution as `max(video_display, overlay)` to preserve
-///    overlay text/graphics readability.
-/// 3. Scale both streams to target, then overlay.
+/// Strategy depends on `overlay_strategy`:
+/// - `Upscale`: target = max(video, overlay) → both scaled up (current default).
+/// - `DownscaleWithSharpen`: target = video dims → overlay scaled down + unsharp.
+///
+/// When `hw_encoder` is VAAPI, appends `format=nv12,hwupload` at the end.
 fn build_video_overlay_filter(
     video_probe: Option<&MediaProbe>,
     overlay_probe: Option<&ImageProbe>,
+    strategy: OverlayStrategy,
+    hw_encoder: Option<HwAccelEncoder>,
 ) -> String {
     let (vid_w, vid_h, _rotation) = match video_probe {
         Some(p) => (p.display_width, p.display_height, p.rotation),
@@ -685,16 +793,28 @@ fn build_video_overlay_filter(
         None => (0, 0),
     };
 
+    let vaapi_suffix = if matches!(hw_encoder, Some(HwAccelEncoder::Vaapi)) {
+        ",format=nv12,hwupload"
+    } else {
+        ""
+    };
+
     // If we have no probe data, fall back to a simple scale2ref approach.
     if vid_w == 0 || vid_h == 0 || ov_w == 0 || ov_h == 0 {
-        return "[1:v]format=rgba[ovsrc];[ovsrc][0:v]scale2ref=w=main_w:h=main_h[ov][base];\
-                [base][ov]overlay=0:0:format=auto,format=yuv420p[vout]"
-            .to_string();
+        return format!(
+            "[1:v]format=rgba[ovsrc];[ovsrc][0:v]scale2ref=w=main_w:h=main_h[ov][base];\
+             [base][ov]overlay=0:0:format=auto,format=yuv420p{vaapi_suffix}[vout]"
+        );
     }
 
-    // Target = the larger canvas so we never downscale either stream.
-    let target_w = vid_w.max(ov_w);
-    let target_h = vid_h.max(ov_h);
+    let (target_w, target_h) = match strategy {
+        OverlayStrategy::Upscale => {
+            let tw = vid_w.max(ov_w);
+            let th = vid_h.max(ov_h);
+            (tw, th)
+        }
+        OverlayStrategy::DownscaleWithSharpen => (vid_w, vid_h),
+    };
     // Ensure dimensions are even (required by H.264 / yuv420p).
     let target_w = (target_w + 1) & !1;
     let target_h = (target_h + 1) & !1;
@@ -708,23 +828,31 @@ fn build_video_overlay_filter(
         "[0:v]scale={target_w}:{target_h}:flags=lanczos[base]"
     ));
 
-    // Step 2: Scale overlay to target dimensions.
+    // Step 2: Scale overlay to target dimensions, optionally with sharpening.
+    let sharpen_suffix = if matches!(strategy, OverlayStrategy::DownscaleWithSharpen) {
+        ",unsharp=5:5:1.0:5:5:0.0"
+    } else {
+        ""
+    };
     parts.push(format!(
-        "[1:v]format=rgba,scale={target_w}:{target_h}:flags=lanczos[ov]"
+        "[1:v]format=rgba,scale={target_w}:{target_h}:flags=lanczos{sharpen_suffix}[ov]"
     ));
 
     // Step 3: Overlay and output to yuv420p.
-    parts.push("[base][ov]overlay=0:0:format=auto,format=yuv420p[vout]".to_string());
+    parts.push(format!(
+        "[base][ov]overlay=0:0:format=auto,format=yuv420p{vaapi_suffix}[vout]"
+    ));
 
     parts.join(";")
 }
 
 /// Build a filter graph for compositing an image with a PNG overlay.
 ///
-/// Scales the smaller input up to the larger to avoid cropping or gaps.
+/// Scales inputs based on the overlay strategy.
 fn build_image_overlay_filter(
     base_probe: Option<&MediaProbe>,
     overlay_probe: Option<&ImageProbe>,
+    strategy: OverlayStrategy,
 ) -> String {
     // For images, MediaProbe width/height are the actual dimensions (no rotation concern).
     let (base_w, base_h) = match base_probe {
@@ -741,14 +869,22 @@ fn build_image_overlay_filter(
         return "[0:v][1:v]overlay=0:0:format=auto[vout]".to_string();
     }
 
-    let target_w = base_w.max(ov_w);
-    let target_h = base_h.max(ov_h);
+    let (target_w, target_h) = match strategy {
+        OverlayStrategy::Upscale => (base_w.max(ov_w), base_h.max(ov_h)),
+        OverlayStrategy::DownscaleWithSharpen => (base_w, base_h),
+    };
     let target_w = (target_w + 1) & !1;
     let target_h = (target_h + 1) & !1;
 
+    let sharpen_suffix = if matches!(strategy, OverlayStrategy::DownscaleWithSharpen) {
+        ",unsharp=5:5:1.0:5:5:0.0"
+    } else {
+        ""
+    };
+
     format!(
         "[0:v]scale={target_w}:{target_h}:flags=lanczos[base];\
-         [1:v]format=rgba,scale={target_w}:{target_h}:flags=lanczos[ov];\
+         [1:v]format=rgba,scale={target_w}:{target_h}:flags=lanczos{sharpen_suffix}[ov];\
          [base][ov]overlay=0:0:format=auto[vout]"
     )
 }
@@ -770,9 +906,18 @@ fn transpose_value(rotation: i32) -> Option<&'static str> {
 fn build_ffmpeg_video_normalize_args(
     base_media_path: &Path,
     output_path: &Path,
-    video_profile: VideoOutputProfile,
+    encoding_options: MediaEncodingOptions,
 ) -> Vec<String> {
-    let mut args = vec![
+    let hw_encoder = resolve_hw_encoder(&encoding_options);
+
+    // VAAPI: add device init before inputs.
+    let mut args = if matches!(hw_encoder, Some(HwAccelEncoder::Vaapi)) {
+        vaapi_init_args()
+    } else {
+        Vec::new()
+    };
+
+    args.extend([
         "-y".to_string(),
         "-i".to_string(),
         base_media_path.to_string_lossy().to_string(),
@@ -781,9 +926,15 @@ fn build_ffmpeg_video_normalize_args(
         "-map".to_string(),
         "0:a?".to_string(),
         "-dn".to_string(),
-    ];
+    ]);
 
-    append_video_encoding_args(&mut args, video_profile);
+    // VAAPI: add upload filter when no overlay filter graph is present.
+    if matches!(hw_encoder, Some(HwAccelEncoder::Vaapi)) {
+        args.push("-vf".to_string());
+        args.push("format=nv12,hwupload".to_string());
+    }
+
+    append_video_encoding_args(&mut args, encoding_options.video_profile, hw_encoder);
     args.push(output_path.to_string_lossy().to_string());
     args
 }
@@ -810,23 +961,21 @@ fn build_ffmpeg_image_transcode_args(
     args
 }
 
-fn append_video_encoding_args(args: &mut Vec<String>, profile: VideoOutputProfile) {
+fn append_video_encoding_args(
+    args: &mut Vec<String>,
+    profile: VideoOutputProfile,
+    hw_encoder: Option<HwAccelEncoder>,
+) {
+    // VP9/WebM never uses hw acceleration.
+    let effective_hw = if matches!(profile, VideoOutputProfile::LinuxWebm) {
+        None
+    } else {
+        hw_encoder
+    };
+
     match profile {
         VideoOutputProfile::Mp4Compatible => {
-            args.push("-c:v".to_string());
-            args.push("libx264".to_string());
-            args.push("-preset".to_string());
-            args.push("veryfast".to_string());
-            args.push("-crf".to_string());
-            args.push("18".to_string());
-            args.push("-profile:v".to_string());
-            args.push("high".to_string());
-            args.push("-pix_fmt".to_string());
-            args.push("yuv420p".to_string());
-            args.push("-c:a".to_string());
-            args.push("aac".to_string());
-            args.push("-b:a".to_string());
-            args.push("128k".to_string());
+            append_h264_encoding_args(args, effective_hw, "veryfast", 18, "high", "128k");
             args.push("-movflags".to_string());
             args.push("+faststart".to_string());
         }
@@ -861,38 +1010,12 @@ fn append_video_encoding_args(args: &mut Vec<String>, profile: VideoOutputProfil
             args.push("webm".to_string());
         }
         VideoOutputProfile::MovFast => {
-            args.push("-c:v".to_string());
-            args.push("libx264".to_string());
-            args.push("-preset".to_string());
-            args.push("ultrafast".to_string());
-            args.push("-crf".to_string());
-            args.push("23".to_string());
-            args.push("-profile:v".to_string());
-            args.push("main".to_string());
-            args.push("-pix_fmt".to_string());
-            args.push("yuv420p".to_string());
-            args.push("-c:a".to_string());
-            args.push("aac".to_string());
-            args.push("-b:a".to_string());
-            args.push("128k".to_string());
+            append_h264_encoding_args(args, effective_hw, "ultrafast", 23, "main", "128k");
             args.push("-movflags".to_string());
             args.push("+faststart".to_string());
         }
         VideoOutputProfile::MovHighQuality => {
-            args.push("-c:v".to_string());
-            args.push("libx264".to_string());
-            args.push("-preset".to_string());
-            args.push("slow".to_string());
-            args.push("-crf".to_string());
-            args.push("16".to_string());
-            args.push("-profile:v".to_string());
-            args.push("high".to_string());
-            args.push("-pix_fmt".to_string());
-            args.push("yuv420p".to_string());
-            args.push("-c:a".to_string());
-            args.push("aac".to_string());
-            args.push("-b:a".to_string());
-            args.push("192k".to_string());
+            append_h264_encoding_args(args, effective_hw, "slow", 16, "high", "192k");
             args.push("-movflags".to_string());
             args.push("+faststart".to_string());
         }
@@ -912,6 +1035,67 @@ fn append_video_encoding_args(args: &mut Vec<String>, profile: VideoOutputProfil
 
     args.push("-max_muxing_queue_size".to_string());
     args.push("1024".to_string());
+}
+
+/// Appends H.264 encoding args, using a HW encoder when available.
+fn append_h264_encoding_args(
+    args: &mut Vec<String>,
+    hw_encoder: Option<HwAccelEncoder>,
+    sw_preset: &str,
+    quality: u8,
+    h264_profile: &str,
+    audio_bitrate: &str,
+) {
+    match hw_encoder {
+        Some(HwAccelEncoder::Nvenc) => {
+            args.push("-c:v".to_string());
+            args.push("h264_nvenc".to_string());
+            args.push("-preset".to_string());
+            args.push("p4".to_string());
+            args.push("-rc".to_string());
+            args.push("vbr".to_string());
+            args.push("-cq".to_string());
+            args.push(quality.to_string());
+            args.push("-profile:v".to_string());
+            args.push(h264_profile.to_string());
+            args.push("-pix_fmt".to_string());
+            args.push("yuv420p".to_string());
+        }
+        Some(HwAccelEncoder::Qsv) => {
+            args.push("-c:v".to_string());
+            args.push("h264_qsv".to_string());
+            args.push("-preset".to_string());
+            args.push("medium".to_string());
+            args.push("-global_quality".to_string());
+            args.push(quality.to_string());
+            args.push("-pix_fmt".to_string());
+            args.push("nv12".to_string());
+        }
+        Some(HwAccelEncoder::Vaapi) => {
+            args.push("-c:v".to_string());
+            args.push("h264_vaapi".to_string());
+            args.push("-qp".to_string());
+            args.push(quality.to_string());
+            args.push("-profile:v".to_string());
+            args.push(h264_profile.to_string());
+        }
+        None => {
+            args.push("-c:v".to_string());
+            args.push("libx264".to_string());
+            args.push("-preset".to_string());
+            args.push(sw_preset.to_string());
+            args.push("-crf".to_string());
+            args.push(quality.to_string());
+            args.push("-profile:v".to_string());
+            args.push(h264_profile.to_string());
+            args.push("-pix_fmt".to_string());
+            args.push("yuv420p".to_string());
+        }
+    }
+    args.push("-c:a".to_string());
+    args.push("aac".to_string());
+    args.push("-b:a".to_string());
+    args.push(audio_bitrate.to_string());
 }
 
 fn append_image_encoding_args(
@@ -1101,6 +1285,8 @@ pub struct SystemCodecInfo {
     pub has_opus_decoder: bool,
     pub has_aac_decoder: bool,
     pub recommended_profile: String,
+    pub available_hw_encoders: Vec<String>,
+    pub recommended_hw_encoder: Option<String>,
 }
 
 pub fn probe_system_codecs() -> SystemCodecInfo {
@@ -1131,6 +1317,11 @@ pub fn probe_system_codecs() -> SystemCodecInfo {
         has_opus_decoder: has_opus,
         has_aac_decoder: has_aac,
         recommended_profile: recommended.to_string(),
+        available_hw_encoders: probe_hw_encoders()
+            .iter()
+            .map(|e| e.label().to_string())
+            .collect(),
+        recommended_hw_encoder: best_hw_encoder().map(|e| e.label().to_string()),
     }
 }
 
@@ -1142,6 +1333,71 @@ fn gst_element_exists(element_name: &str) -> bool {
         .status()
         .map(|status| status.success())
         .unwrap_or(false)
+}
+
+/// Cached list of hardware encoders detected via `ffmpeg -encoders`.
+static HW_ENCODERS: OnceLock<Vec<HwAccelEncoder>> = OnceLock::new();
+
+/// Probes ffmpeg for available hardware-accelerated H.264 encoders.
+/// Results are cached for the lifetime of the process.
+pub fn probe_hw_encoders() -> &'static [HwAccelEncoder] {
+    HW_ENCODERS.get_or_init(|| {
+        let output = Command::new("ffmpeg")
+            .args(["-hide_banner", "-encoders"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output();
+
+        let stdout = match output {
+            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
+            _ => return Vec::new(),
+        };
+
+        parse_hw_encoders_from_output(&stdout)
+    })
+}
+
+/// Parse the output of `ffmpeg -encoders` to find hardware H.264 encoders.
+fn parse_hw_encoders_from_output(output: &str) -> Vec<HwAccelEncoder> {
+    // Order matters: NVENC > QSV > VAAPI (priority for `best_hw_encoder`).
+    let candidates = [
+        ("h264_nvenc", HwAccelEncoder::Nvenc),
+        ("h264_qsv", HwAccelEncoder::Qsv),
+        ("h264_vaapi", HwAccelEncoder::Vaapi),
+    ];
+
+    let mut found = Vec::new();
+    for line in output.lines() {
+        let trimmed = line.trim();
+        for &(name, encoder) in &candidates {
+            // Lines look like: " V..... h264_nvenc   NVIDIA NVENC H.264 encoder (codec h264)"
+            if trimmed.contains(name) && !found.contains(&encoder) {
+                found.push(encoder);
+            }
+        }
+    }
+    found
+}
+
+/// Returns the best available hardware encoder, or `None` if none is detected.
+pub fn best_hw_encoder() -> Option<HwAccelEncoder> {
+    probe_hw_encoders().first().copied()
+}
+
+/// Resolve the effective hardware encoder for the given encoding options.
+/// Returns `None` when software encoding should be used.
+fn resolve_hw_encoder(opts: &MediaEncodingOptions) -> Option<HwAccelEncoder> {
+    if matches!(opts.video_profile, VideoOutputProfile::LinuxWebm) {
+        return None;
+    }
+    opts.hw_accel.resolve()
+}
+
+/// VAAPI init args placed before `-i` to open the render device.
+fn vaapi_init_args() -> Vec<String> {
+    let device =
+        std::env::var("LIBVA_RENDER_DEVICE").unwrap_or_else(|_| "/dev/dri/renderD128".to_string());
+    vec!["-vaapi_device".to_string(), device]
 }
 
 /// Runs `ffprobe` on the output to verify it has at least one video stream
@@ -1253,8 +1509,9 @@ mod tests {
     use super::{
         build_ffmpeg_metadata_args, build_ffmpeg_overlay_args, build_image_overlay_filter,
         build_video_overlay_filter, cleanup_intermediate_files, media_kind_from_path,
-        normalize_datetime_for_ffmpeg, parse_coordinates, transpose_value, ImageOutputFormat,
-        ImageProbe, ImageQuality, MediaEncodingOptions, MediaKind, MediaProbe, VideoOutputProfile,
+        normalize_datetime_for_ffmpeg, parse_coordinates, transpose_value, HwAccelEncoder,
+        HwAccelPreference, ImageOutputFormat, ImageProbe, ImageQuality, MediaEncodingOptions,
+        MediaKind, MediaProbe, OverlayStrategy, VideoOutputProfile,
     };
 
     #[test]
@@ -1292,6 +1549,8 @@ mod tests {
                 video_profile: VideoOutputProfile::Mp4Compatible,
                 image_format: ImageOutputFormat::Jpg,
                 image_quality: ImageQuality::Full,
+                hw_accel: HwAccelPreference::Disabled,
+                overlay_strategy: OverlayStrategy::Upscale,
             },
             None,
             None,
@@ -1312,6 +1571,8 @@ mod tests {
                 video_profile: VideoOutputProfile::Mp4Compatible,
                 image_format: ImageOutputFormat::Jpg,
                 image_quality: ImageQuality::Full,
+                hw_accel: HwAccelPreference::Disabled,
+                overlay_strategy: OverlayStrategy::Upscale,
             },
             None,
             None,
@@ -1402,7 +1663,12 @@ mod tests {
             width: 1080,
             height: 1920,
         };
-        let filter = build_video_overlay_filter(Some(&video), Some(&overlay));
+        let filter = build_video_overlay_filter(
+            Some(&video),
+            Some(&overlay),
+            OverlayStrategy::Upscale,
+            None,
+        );
         assert!(filter.contains("scale=1080:1920"));
         assert!(!filter.contains("transpose"));
         assert!(filter.contains("[vout]"));
@@ -1423,7 +1689,12 @@ mod tests {
             width: 1080,
             height: 1920,
         };
-        let filter = build_video_overlay_filter(Some(&video), Some(&overlay));
+        let filter = build_video_overlay_filter(
+            Some(&video),
+            Some(&overlay),
+            OverlayStrategy::Upscale,
+            None,
+        );
         // Rotation is handled by ffmpeg autorotate, not by transpose in the filter.
         assert!(!filter.contains("transpose"));
         assert!(filter.contains("scale=1080:1920"));
@@ -1444,7 +1715,12 @@ mod tests {
             width: 1080,
             height: 1920,
         };
-        let filter = build_video_overlay_filter(Some(&video), Some(&overlay));
+        let filter = build_video_overlay_filter(
+            Some(&video),
+            Some(&overlay),
+            OverlayStrategy::Upscale,
+            None,
+        );
         // Rotation is handled by ffmpeg autorotate, not by transpose in the filter.
         assert!(!filter.contains("transpose"));
         assert!(filter.contains("scale=1080:1920"));
@@ -1465,7 +1741,12 @@ mod tests {
             width: 1080,
             height: 1920,
         };
-        let filter = build_video_overlay_filter(Some(&video), Some(&overlay));
+        let filter = build_video_overlay_filter(
+            Some(&video),
+            Some(&overlay),
+            OverlayStrategy::Upscale,
+            None,
+        );
         // Target should be 1080x1920 (the larger)
         assert!(filter.contains("scale=1080:1920"));
     }
@@ -1485,14 +1766,19 @@ mod tests {
             width: 1079,
             height: 1919,
         };
-        let filter = build_video_overlay_filter(Some(&video), Some(&overlay));
+        let filter = build_video_overlay_filter(
+            Some(&video),
+            Some(&overlay),
+            OverlayStrategy::Upscale,
+            None,
+        );
         // Both target dims should be even
         assert!(filter.contains("scale=1080:1920"));
     }
 
     #[test]
     fn video_overlay_filter_fallback_without_probes() {
-        let filter = build_video_overlay_filter(None, None);
+        let filter = build_video_overlay_filter(None, None, OverlayStrategy::Upscale, None);
         assert!(filter.contains("scale2ref"));
         assert!(filter.contains("[vout]"));
     }
@@ -1512,14 +1798,15 @@ mod tests {
             width: 1080,
             height: 1920,
         };
-        let filter = build_image_overlay_filter(Some(&base), Some(&overlay));
+        let filter =
+            build_image_overlay_filter(Some(&base), Some(&overlay), OverlayStrategy::Upscale);
         assert!(filter.contains("scale=1080:1920"));
         assert!(filter.contains("[vout]"));
     }
 
     #[test]
     fn image_overlay_filter_fallback_without_probes() {
-        let filter = build_image_overlay_filter(None, None);
+        let filter = build_image_overlay_filter(None, None, OverlayStrategy::Upscale);
         assert!(filter.contains("overlay=0:0"));
         assert!(filter.contains("[vout]"));
     }
@@ -1558,6 +1845,8 @@ mod tests {
                 video_profile: VideoOutputProfile::Mp4Compatible,
                 image_format: ImageOutputFormat::Jpg,
                 image_quality: ImageQuality::Full,
+                hw_accel: HwAccelPreference::Disabled,
+                overlay_strategy: OverlayStrategy::Upscale,
             },
             Some(&video),
             Some(&overlay),
@@ -1566,5 +1855,159 @@ mod tests {
         assert!(!args.contains(&"-noautorotate".to_string()));
         assert!(args.contains(&"-t".to_string()));
         assert!(!args.contains(&"-shortest".to_string()));
+    }
+
+    #[test]
+    fn parses_hw_encoders_from_ffmpeg_output() {
+        use super::parse_hw_encoders_from_output;
+
+        let output = r#"Encoders:
+ V..... libx264              libx264 H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10 (codec h264)
+ V..... h264_nvenc           NVIDIA NVENC H.264 encoder (codec h264)
+ V..... h264_qsv             Intel Quick Sync Video H.264 encoder (codec h264)
+ V..... h264_vaapi           H.264 (VAAPI) (codec h264)
+"#;
+        let encoders = parse_hw_encoders_from_output(output);
+        assert_eq!(encoders.len(), 3);
+        assert_eq!(encoders[0], HwAccelEncoder::Nvenc);
+        assert_eq!(encoders[1], HwAccelEncoder::Qsv);
+        assert_eq!(encoders[2], HwAccelEncoder::Vaapi);
+    }
+
+    #[test]
+    fn parses_hw_encoders_empty_when_none_available() {
+        use super::parse_hw_encoders_from_output;
+
+        let output = "Encoders:\n V..... libx264 libx264\n";
+        let encoders = parse_hw_encoders_from_output(output);
+        assert!(encoders.is_empty());
+    }
+
+    #[test]
+    fn video_overlay_filter_downscale_sharpen() {
+        let video = MediaProbe {
+            width: 720,
+            height: 1280,
+            rotation: 0,
+            display_width: 720,
+            display_height: 1280,
+            has_audio: false,
+            duration_secs: 0.0,
+        };
+        let overlay = ImageProbe {
+            width: 1080,
+            height: 1920,
+        };
+        // With DownscaleWithSharpen, the overlay (larger) should be scaled down
+        let filter = build_video_overlay_filter(
+            Some(&video),
+            Some(&overlay),
+            OverlayStrategy::DownscaleWithSharpen,
+            None,
+        );
+        // Should contain unsharp for sharpening
+        assert!(filter.contains("unsharp"));
+        assert!(filter.contains("[vout]"));
+    }
+
+    #[test]
+    fn image_overlay_filter_downscale_sharpen() {
+        let base = MediaProbe {
+            width: 720,
+            height: 1280,
+            rotation: 0,
+            display_width: 720,
+            display_height: 1280,
+            has_audio: false,
+            duration_secs: 0.0,
+        };
+        let overlay = ImageProbe {
+            width: 1080,
+            height: 1920,
+        };
+        let filter = build_image_overlay_filter(
+            Some(&base),
+            Some(&overlay),
+            OverlayStrategy::DownscaleWithSharpen,
+        );
+        assert!(filter.contains("unsharp"));
+        assert!(filter.contains("[vout]"));
+    }
+
+    #[test]
+    fn video_overlay_filter_vaapi_appends_hwupload() {
+        let video = MediaProbe {
+            width: 1080,
+            height: 1920,
+            rotation: 0,
+            display_width: 1080,
+            display_height: 1920,
+            has_audio: false,
+            duration_secs: 0.0,
+        };
+        let overlay = ImageProbe {
+            width: 1080,
+            height: 1920,
+        };
+        let filter = build_video_overlay_filter(
+            Some(&video),
+            Some(&overlay),
+            OverlayStrategy::Upscale,
+            Some(HwAccelEncoder::Vaapi),
+        );
+        assert!(filter.contains("format=nv12,hwupload"));
+        assert!(filter.contains("[vout]"));
+    }
+
+    #[test]
+    fn hw_accel_preference_from_setting() {
+        assert_eq!(
+            HwAccelPreference::from_setting(Some("auto")),
+            HwAccelPreference::Auto,
+        );
+        assert_eq!(
+            HwAccelPreference::from_setting(Some("nvenc")),
+            HwAccelPreference::Nvenc,
+        );
+        assert_eq!(
+            HwAccelPreference::from_setting(Some("qsv")),
+            HwAccelPreference::Qsv,
+        );
+        assert_eq!(
+            HwAccelPreference::from_setting(Some("vaapi")),
+            HwAccelPreference::Vaapi,
+        );
+        assert_eq!(
+            HwAccelPreference::from_setting(Some("disabled")),
+            HwAccelPreference::Disabled,
+        );
+        assert_eq!(
+            HwAccelPreference::from_setting(None),
+            HwAccelPreference::Auto,
+        );
+        assert_eq!(
+            HwAccelPreference::from_setting(Some("junk")),
+            HwAccelPreference::Auto,
+        );
+    }
+
+    #[test]
+    fn overlay_strategy_from_setting() {
+        assert_eq!(
+            OverlayStrategy::from_setting(Some("upscale")),
+            OverlayStrategy::Upscale,
+        );
+        assert_eq!(
+            OverlayStrategy::from_setting(Some("downscale_sharpen")),
+            OverlayStrategy::DownscaleWithSharpen,
+        );
+        assert_eq!(
+            OverlayStrategy::from_setting(None),
+            OverlayStrategy::Upscale,
+        );
+        assert_eq!(
+            OverlayStrategy::from_setting(Some("invalid")),
+            OverlayStrategy::Upscale,
+        );
     }
 }

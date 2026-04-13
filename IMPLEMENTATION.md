@@ -24,22 +24,10 @@ data reset failed after running the extractor
 
 
 
-update logs. use timestamp for date, eg [10:19:40]. than state if its a improted img or video and also maybe its timestamp and translated location.
-
-[2019-05-16] Extracting mid 0c999aa2 from ZIP archives (3301/5086)
-
-[2019-04-18] Extracting mid ed53d0d8 from ZIP archives (3302/5086)
+pelase update the logs on the downlaoder/extractor page. use timestamp for current time, eg [10:19:40]. than state if its a import img or video and also dispaly its date, format (vid/img) and mid (id of the memory). here update all logs to be better for user to dispaly information. also maybe colored eg for error red; or issues/skip, missing yellow
 
 
 
 
-
-
-add spacing between side bar menu items + confirm window settings reset data
-
-
-
-Hardware acceleration — On Windows, could detect NVENC (h264_nvenc) or QSV for much faster encoding. Significant optimization but adds codec detection complexity. Recommend deferring to a follow-up.
-Downscale-with-sharpen alternative — When resolution gap is extreme (>2×), upscaling the video is heavy. Could instead downscale overlay with a sharpening filter to preserve text. Recommend defaulting to upscale but adding as a config option later.
-
+next please help and add spacing between side bar menu items. here add some gap between the viewer, extractor and settings sidebar items. also add some gap between the confirm window settings reset data reset and cancel button.
 

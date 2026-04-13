@@ -149,6 +149,8 @@ export type SystemCodecInfo = {
   hasOpusDecoder: boolean;
   hasAacDecoder: boolean;
   recommendedProfile: string;
+  availableHwEncoders: string[];
+  recommendedHwEncoder: string | null;
 };
 
 export async function probeSystemCodecs(): Promise<SystemCodecInfo> {
@@ -233,6 +235,9 @@ export async function getQueuedCount(): Promise<number> {
   return invoke<number>("get_queued_count");
 }
 
+export type EncodingHwAccel = "auto" | "nvenc" | "qsv" | "vaapi" | "disabled";
+export type OverlayStrategy = "upscale" | "downscale_sharpen";
+
 export async function processDownloadedMemories(
   outputDir: string,
   keepOriginals: boolean,
@@ -240,6 +245,8 @@ export async function processDownloadedMemories(
   videoProfile?: VideoProfile,
   imageOutputFormat?: ImageOutputFormat,
   imageQuality?: ImageQuality,
+  encodingHwAccel?: EncodingHwAccel,
+  overlayStrategy?: OverlayStrategy,
 ): Promise<ProcessMemoriesResult> {
   return invoke<ProcessMemoriesResult>("process_downloaded_memories", {
     outputDir,
@@ -248,6 +255,8 @@ export async function processDownloadedMemories(
     videoProfile,
     imageOutputFormat,
     imageQuality,
+    encodingHwAccel,
+    overlayStrategy,
   });
 }
 
@@ -259,6 +268,8 @@ export async function processMemoriesFromZipArchives(
   videoProfile?: VideoProfile,
   imageOutputFormat?: ImageOutputFormat,
   imageQuality?: ImageQuality,
+  encodingHwAccel?: EncodingHwAccel,
+  overlayStrategy?: OverlayStrategy,
 ): Promise<ProcessMemoriesResult> {
   return invoke<ProcessMemoriesResult>("process_memories_from_zip_archives", {
     zipPaths,
@@ -268,6 +279,8 @@ export async function processMemoriesFromZipArchives(
     videoProfile,
     imageOutputFormat,
     imageQuality,
+    encodingHwAccel,
+    overlayStrategy,
   });
 }
 

@@ -1912,6 +1912,7 @@ async fn reset_all_app_data(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn process_downloaded_memories(
     app: tauri::AppHandle,
     window: tauri::Window,
@@ -1921,6 +1922,8 @@ async fn process_downloaded_memories(
     video_profile: Option<String>,
     image_output_format: Option<String>,
     image_quality: Option<String>,
+    encoding_hw_accel: Option<String>,
+    overlay_strategy: Option<String>,
 ) -> Result<ProcessMemoriesResult, String> {
     let resolved_output_dir = resolve_output_dir(&app, &output_dir)?;
 
@@ -1948,6 +1951,8 @@ async fn process_downloaded_memories(
     let image_output_format =
         core::media::ImageOutputFormat::from_setting(image_output_format.as_deref());
     let image_quality = core::media::ImageQuality::from_setting(image_quality.as_deref());
+    let hw_accel = core::media::HwAccelPreference::from_setting(encoding_hw_accel.as_deref());
+    let overlay_strat = core::media::OverlayStrategy::from_setting(overlay_strategy.as_deref());
     let pool = sqlx::SqlitePool::connect(&database_url)
         .await
         .map_err(|error| format!("failed to connect to memories database: {error}"))?;
@@ -2201,6 +2206,8 @@ async fn process_downloaded_memories(
             video_output_profile,
             image_output_format,
             image_quality,
+            hw_accel,
+            overlay_strategy: overlay_strat,
             keep_originals,
             database_url: database_url.clone(),
         })
@@ -2483,6 +2490,7 @@ async fn process_downloaded_memories(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn process_memories_from_zip_archives(
     app: tauri::AppHandle,
     window: tauri::Window,
@@ -2493,6 +2501,8 @@ async fn process_memories_from_zip_archives(
     video_profile: Option<String>,
     image_output_format: Option<String>,
     image_quality: Option<String>,
+    encoding_hw_accel: Option<String>,
+    overlay_strategy: Option<String>,
 ) -> Result<ProcessMemoriesResult, String> {
     if zip_paths.is_empty() {
         return Err("zip_paths must not be empty".to_string());
@@ -2508,6 +2518,10 @@ async fn process_memories_from_zip_archives(
     let image_output_format =
         crate::core::media::ImageOutputFormat::from_setting(image_output_format.as_deref());
     let image_quality = crate::core::media::ImageQuality::from_setting(image_quality.as_deref());
+    let hw_accel =
+        crate::core::media::HwAccelPreference::from_setting(encoding_hw_accel.as_deref());
+    let overlay_strat =
+        crate::core::media::OverlayStrategy::from_setting(overlay_strategy.as_deref());
     let pool = sqlx::SqlitePool::connect(&database_url)
         .await
         .map_err(|error| format!("failed to connect to memories database: {error}"))?;
@@ -2842,6 +2856,8 @@ async fn process_memories_from_zip_archives(
                 video_output_profile,
                 image_output_format,
                 image_quality,
+                hw_accel,
+                overlay_strategy: overlay_strat,
                 keep_originals,
                 database_url: database_url.clone(),
             }),

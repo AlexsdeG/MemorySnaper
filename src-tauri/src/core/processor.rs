@@ -118,6 +118,8 @@ pub struct ProcessMediaInput {
     pub video_output_profile: media::VideoOutputProfile,
     pub image_output_format: media::ImageOutputFormat,
     pub image_quality: media::ImageQuality,
+    pub hw_accel: media::HwAccelPreference,
+    pub overlay_strategy: media::OverlayStrategy,
     pub keep_originals: bool,
     pub database_url: String,
 }
@@ -223,6 +225,8 @@ pub async fn process_media(input: ProcessMediaInput) -> Result<ProcessMediaResul
         video_profile: input.video_output_profile,
         image_format: input.image_output_format,
         image_quality: input.image_quality,
+        hw_accel: input.hw_accel,
+        overlay_strategy: input.overlay_strategy,
     };
 
     let merge_result = merge_staged_media(
@@ -234,7 +238,50 @@ pub async fn process_media(input: ProcessMediaInput) -> Result<ProcessMediaResul
     .await;
 
     if let Err(error) = merge_result {
-        if effective_overlay_path.is_some() {
+        // If hw accel was enabled, retry with software encoding first.
+        let hw_was_enabled = !matches!(
+            encoding_options.hw_accel,
+            media::HwAccelPreference::Disabled
+        ) && encoding_options.hw_accel.resolve().is_some();
+        if hw_was_enabled {
+            eprintln!(
+                "[processor-debug] hw-accelerated merge failed for memory_item_id={}, retrying with software: {}",
+                input.memory_item_id, error
+            );
+            let sw_options = media::MediaEncodingOptions {
+                hw_accel: media::HwAccelPreference::Disabled,
+                ..encoding_options
+            };
+            let sw_result = merge_staged_media(
+                base_media_path,
+                effective_overlay_path,
+                &final_media_path,
+                sw_options,
+            )
+            .await;
+            match sw_result {
+                Ok(()) => {
+                    if overlay_requested {
+                        overlay_applied = effective_overlay_path.is_some();
+                    }
+                }
+                Err(sw_err) if effective_overlay_path.is_some() => {
+                    let fallback_msg = sw_err.to_string();
+                    overlay_fallback_reason = Some(fallback_msg.clone());
+                    overlay_applied = false;
+                    eprintln!(
+                        "[processor-debug] software overlay merge also failed for memory_item_id={}, retrying without overlay: {}",
+                        input.memory_item_id, fallback_msg
+                    );
+                    effective_overlay_path = None;
+                    merge_staged_media(base_media_path, None, &final_media_path, sw_options)
+                        .await?;
+                }
+                Err(sw_err) => {
+                    return Err(sw_err);
+                }
+            }
+        } else if effective_overlay_path.is_some() {
             let fallback_msg = error.to_string();
             overlay_fallback_reason = Some(fallback_msg.clone());
             overlay_applied = false;
@@ -279,6 +326,8 @@ pub async fn process_media(input: ProcessMediaInput) -> Result<ProcessMediaResul
                     video_profile: media::VideoOutputProfile::Mp4Compatible,
                     image_format: input.image_output_format,
                     image_quality: input.image_quality,
+                    hw_accel: input.hw_accel,
+                    overlay_strategy: input.overlay_strategy,
                 },
             )
             .await?;
@@ -946,6 +995,8 @@ mod tests {
                 video_profile: media::VideoOutputProfile::Mp4Compatible,
                 image_format: media::ImageOutputFormat::Jpg,
                 image_quality: media::ImageQuality::Full,
+                hw_accel: media::HwAccelPreference::Disabled,
+                overlay_strategy: media::OverlayStrategy::Upscale,
             },
         )
         .await
