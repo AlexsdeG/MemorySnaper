@@ -121,6 +121,10 @@ struct AppConfig {
 
 struct AppConfigState(Mutex<AppConfig>);
 
+/// Shared, persistent SQLite connection pool injected as Tauri managed state.
+/// Avoids the per-command cold-connect overhead for latency-sensitive queries.
+struct AppDbPool(sqlx::SqlitePool);
+
 fn app_config_file_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     let app_data_dir = app
         .path()
@@ -497,7 +501,7 @@ async fn ensure_sqlite_column(
     Ok(())
 }
 
-async fn setup_database(app: &tauri::AppHandle) -> Result<(), String> {
+async fn setup_database(app: &tauri::AppHandle) -> Result<sqlx::SqlitePool, String> {
     let mut base_dir = resolve_base_dir(app)?;
 
     std::fs::create_dir_all(&base_dir)
@@ -584,6 +588,28 @@ async fn setup_database(app: &tauri::AppHandle) -> Result<(), String> {
     .await
     .map_err(|error| format!("failed to create Memories content hash index: {error}"))?;
 
+    // Indexes that speed up get_missing_files and related queries.
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_memories_status ON Memories(status)",
+    )
+    .execute(&pool)
+    .await
+    .map_err(|error| format!("failed to create Memories status index: {error}"))?;
+
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_memoryitem_media_url ON MemoryItem(media_url)",
+    )
+    .execute(&pool)
+    .await
+    .map_err(|error| format!("failed to create MemoryItem media_url index: {error}"))?;
+
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_mediachunks_memid_order ON MediaChunks(memory_id, order_index)",
+    )
+    .execute(&pool)
+    .await
+    .map_err(|error| format!("failed to create MediaChunks memory_id/order_index index: {error}"))?;
+
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS MediaChunks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -621,8 +647,9 @@ async fn setup_database(app: &tauri::AppHandle) -> Result<(), String> {
     .await
     .map_err(|error| format!("failed to create ProcessedZips table: {error}"))?;
 
-    pool.close().await;
-    Ok(())
+    // Return the pool so the caller can register it as managed state.
+    // Do NOT call pool.close() here — the pool is kept alive for the process lifetime.
+    Ok(pool)
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -1346,11 +1373,10 @@ async fn finalize_zip_session(app: tauri::AppHandle, job_id: Option<String>) -> 
 }
 
 #[tauri::command]
-async fn get_missing_files(app: tauri::AppHandle) -> Result<Vec<MissingFileItem>, String> {
-    let database_url = memories_db_url(&app)?;
-    let pool = sqlx::SqlitePool::connect(&database_url)
-        .await
-        .map_err(|error| format!("failed to connect to memories database: {error}"))?;
+async fn get_missing_files(
+    db: tauri::State<'_, AppDbPool>,
+) -> Result<Vec<MissingFileItem>, String> {
+    let pool = &db.0;
 
     let rows = sqlx::query(
         "
@@ -1368,22 +1394,18 @@ async fn get_missing_files(app: tauri::AppHandle) -> Result<Vec<MissingFileItem>
          AND mc.order_index = 1
         JOIN MemoryItem mi
           ON mi.id = (
-                SELECT mi2.id
+                SELECT MIN(mi2.id)
                 FROM MemoryItem mi2
                 WHERE mi2.media_url = mc.url
                   AND IFNULL(mi2.overlay_url, '') = IFNULL(mc.overlay_url, '')
-                ORDER BY mi2.id ASC
-                LIMIT 1
              )
         WHERE m.status = 'MISSING_LOCAL'
         ORDER BY m.id ASC
         ",
     )
-    .fetch_all(&pool)
+    .fetch_all(pool)
     .await
     .map_err(|error| format!("failed to load missing files list: {error}"))?;
-
-    pool.close().await;
 
     Ok(rows
         .into_iter()
@@ -1401,13 +1423,10 @@ async fn get_missing_files(app: tauri::AppHandle) -> Result<Vec<MissingFileItem>
 
 #[tauri::command]
 async fn get_missing_file_by_memory_item_id(
-    app: tauri::AppHandle,
+    db: tauri::State<'_, AppDbPool>,
     memory_item_id: i64,
 ) -> Result<Option<MissingFileItem>, String> {
-    let database_url = memories_db_url(&app)?;
-    let pool = sqlx::SqlitePool::connect(&database_url)
-        .await
-        .map_err(|error| format!("failed to connect to memories database: {error}"))?;
+    let pool = &db.0;
 
     let row = sqlx::query(
         "
@@ -1432,11 +1451,9 @@ async fn get_missing_file_by_memory_item_id(
         ",
     )
     .bind(memory_item_id)
-    .fetch_optional(&pool)
+    .fetch_optional(pool)
     .await
     .map_err(|error| format!("failed to load missing file item by memory id: {error}"))?;
-
-    pool.close().await;
 
     Ok(row.map(|row| MissingFileItem {
         memory_group_id: row.get::<i64, _>("memory_group_id"),
@@ -4272,8 +4289,9 @@ pub fn run() {
                 }
             }
 
-            tauri::async_runtime::block_on(setup_database(app.handle()))
+            let db_pool = tauri::async_runtime::block_on(setup_database(app.handle()))
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
+            app.manage(AppDbPool(db_pool));
             let database_url = memories_db_url(app.handle())
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             tauri::async_runtime::spawn(backfill_metadata(database_url));
