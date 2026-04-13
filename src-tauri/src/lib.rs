@@ -1469,6 +1469,7 @@ fn stop_processing_session() -> Result<(), String> {
 fn resume_processing_session() -> Result<(), String> {
     core::state::set_stopped(false);
     core::state::set_paused(false);
+    core::state::set_session_active(true);
     Ok(())
 }
 
@@ -1539,6 +1540,14 @@ async fn get_processing_session_overview(
     let state = core::state::snapshot();
     pool.close().await;
 
+    // After a cold restart the in-memory atomics default to
+    // {is_paused: false, is_stopped: false} even though nothing is running.
+    // Detect this: if a job exists in the DB but the session was never
+    // explicitly activated in this process lifetime, the previous run was
+    // interrupted and should be treated as stopped.
+    let effective_is_stopped = state.is_stopped
+        || (latest_job_id.is_some() && !state.is_session_active);
+
     let (export_status, total_files, downloaded_files) = if let Some(row) = job_row {
         let row_total_files = row.get::<i64, _>("total_files");
         let row_downloaded_files = row.get::<i64, _>("downloaded_files");
@@ -1569,7 +1578,7 @@ async fn get_processing_session_overview(
         missing_files,
         duplicates_skipped,
         is_paused: state.is_paused,
-        is_stopped: state.is_stopped,
+        is_stopped: effective_is_stopped,
         active_zip,
         finished_zip_files,
     })

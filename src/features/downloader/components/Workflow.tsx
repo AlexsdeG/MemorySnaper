@@ -403,7 +403,34 @@ export function Workflow() {
   useEffect(() => {
     const loadOverview = async () => {
       try {
-        await refreshSessionOverview();
+        const overview = await getProcessingSessionOverview();
+
+        if (isSessionResettingRef.current) {
+          return;
+        }
+
+        setJobId(overview.jobId);
+        setTotalFiles(overview.totalFiles);
+        setDownloadedFiles(overview.downloadedFiles);
+        setProcessedFiles(overview.processedFiles);
+        setMissingFiles(overview.missingFiles);
+        setDuplicatesSkipped(overview.duplicatesSkipped);
+        setIsPaused(overview.isPaused);
+        setIsStopped(overview.isStopped);
+        setActiveZip(overview.activeZip);
+        setFinishedZipFiles(overview.finishedZipFiles);
+
+        if (overview.jobId !== null && !overview.isStopped) {
+          setImportState("running");
+        } else {
+          setImportState("idle");
+          // If the backend marked the previous session as interrupted (stopped
+          // because nothing is running after restart), reset any stale status
+          // message that was persisted to localStorage.
+          if (overview.isStopped && overview.jobId !== null) {
+            setNotice(t("downloader.workflow.status.idle"));
+          }
+        }
       } catch (error) {
         console.error("[downloader] Failed to load session overview", error);
         setNotice(t("downloader.workflow.status.loadingJobState"), "error");
